@@ -63,9 +63,7 @@ class CrystalStructureDataset:
     @property
     def raw_folder(self) -> Path:
         """Returns the path to the raw data folder."""
-        return Path(
-            self.root, self.dataset_name, "raw"
-        )  # os.path.join(self.root, self.dataset_name, "raw")
+        return Path(self.root, self.dataset_name, "raw")  # os.path.join(self.root, self.dataset_name, "raw")
 
     @property
     def processed_folder(self) -> Path:
@@ -96,9 +94,7 @@ class MP20(CrystalStructureDataset):
     """MP-20 dataset first published by Jain et al., 2013."""
 
     dataset_name = "mp_20"
-    url = (
-        "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mp_20/"
-    )
+    url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mp_20/"
 
 
 class Perov5(CrystalStructureDataset):
@@ -122,4 +118,4 @@ if __name__ == "__main__":
         download=True,  # Set to True to download the dataset if not present
     )
     # print(dataset.data)  # noqa: ERA001
-    # print(f"Loaded {dataset.dataset_name} {dataset.split} dataset with {len(dataset.data)} samples.")  # noqa: E501, ERA001
+    # print(f"Loaded {dataset.dataset_name} {dataset.split} dataset with {len(dataset.data)} samples.")  # noqa: ERA001

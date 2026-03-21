@@ -1,12 +1,14 @@
 from pathlib import Path
 
 import requests
+from mattergen.common.data.chemgraph import ChemGraph  # noqa: TC002
 from mattergen.common.data.dataset import CrystalDataset, CrystalDatasetBuilder
 from mattergen.common.data.transform import Transform  # noqa: TC002
+from torch.utils.data import Dataset
 
 
 # Inspired by: https://docs.pytorch.org/vision/stable/_modules/torchvision/datasets/mnist.html
-class CrystalDatasetWrapper:
+class CrystalDatasetWrapper(Dataset):
     """Dataset class for loading crystal structures for CIF-compatible dataset."""
 
     dataset_name = "crystal_structure_dataset"
@@ -20,7 +22,7 @@ class CrystalDatasetWrapper:
         download: bool = False,  # noqa: FBT001, FBT002
     ) -> None:
         """Initialize the CrystalDatasetWrapper."""
-        if not isinstance(split, str) or split not in {"train", "val", "test"}:
+        if not isinstance(split, str) or split not in ["train", "val", "test"]:
             msg = "split must be one of 'train', 'val', or 'test'"
             raise ValueError(msg)
 
@@ -60,6 +62,14 @@ class CrystalDatasetWrapper:
 
         return builder.build(dataset_class=CrystalDataset)
 
+    def __getitem__(self, index: int) -> ChemGraph:
+        """Return the sample at the given index."""
+        return self.data[index]
+
+    def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
+        return len(self.data)
+
     @property
     def raw_folder(self) -> Path:
         """Returns the path to the raw data folder."""
@@ -90,6 +100,13 @@ class CrystalDatasetWrapper:
             f.write(response.content)
 
 
+class Carbon24(CrystalDatasetWrapper):
+    """Carbon-24 dataset first published by Jha et al., 2018."""
+
+    dataset_name = "carbon_24"
+    url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/carbon_24/"
+
+
 class MP20(CrystalDatasetWrapper):
     """MP-20 dataset first published by Jain et al., 2013."""
 
@@ -97,18 +114,18 @@ class MP20(CrystalDatasetWrapper):
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mp_20/"
 
 
+class MPTS52(CrystalDatasetWrapper):
+    """MPTS-52 dataset first published by Jha et al., 2018."""
+
+    dataset_name = "mpts_52"
+    url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mpts_52/"
+
+
 class Perov5(CrystalDatasetWrapper):
     """Perovskite dataset first published by Jha et al., 2018."""
 
     dataset_name = "perov_5"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/perov_5/"
-
-
-class MPTS52(CrystalDatasetWrapper):
-    """MPTS-52 dataset first published by Jha et al., 2018."""
-
-    dataset_name = "mpts_52"
-    url = ...
 
 
 if __name__ == "__main__":

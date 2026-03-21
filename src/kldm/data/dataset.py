@@ -6,7 +6,7 @@ from mattergen.common.data.transform import Transform  # noqa: TC002
 
 
 # Inspired by: https://docs.pytorch.org/vision/stable/_modules/torchvision/datasets/mnist.html
-class CrystalStructureDataset:
+class CrystalDatasetWrapper:
     """Dataset class for loading crystal structures for CIF-compatible dataset."""
 
     dataset_name = "crystal_structure_dataset"
@@ -19,7 +19,7 @@ class CrystalStructureDataset:
         transforms: list[Transform] | None = None,
         download: bool = False,  # noqa: FBT001, FBT002
     ) -> None:
-        """Initialize the CrystalStructureDataset."""
+        """Initialize the CrystalDatasetWrapper."""
         if not isinstance(split, str) or split not in {"train", "val", "test"}:
             msg = "split must be one of 'train', 'val', or 'test'"
             raise ValueError(msg)
@@ -90,21 +90,21 @@ class CrystalStructureDataset:
             f.write(response.content)
 
 
-class MP20(CrystalStructureDataset):
+class MP20(CrystalDatasetWrapper):
     """MP-20 dataset first published by Jain et al., 2013."""
 
     dataset_name = "mp_20"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mp_20/"
 
 
-class Perov5(CrystalStructureDataset):
+class Perov5(CrystalDatasetWrapper):
     """Perovskite dataset first published by Jha et al., 2018."""
 
     dataset_name = "perov_5"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/perov_5/"
 
 
-class MPTS52(CrystalStructureDataset):
+class MPTS52(CrystalDatasetWrapper):
     """MPTS-52 dataset first published by Jha et al., 2018."""
 
     dataset_name = "mpts_52"

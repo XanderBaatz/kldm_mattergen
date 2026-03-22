@@ -6,16 +6,27 @@ description = "This repository contains configurations to set up a Python develo
 authors = [{ name = "a5chin", email = "a5chin.origin+contact@gmail.com" }]
 maintainers = [{ name = "a5chin", email = "a5chin.origin+contact@gmail.com" }]
 
-requires-python = ">=3.11"
+requires-python = ">=3.10,<3.13"
 readme = "README.md"
 license = { file = "LICENSE" }
 
 dependencies = [
     "beartype>=0.22.9",
+    "emmet>=2018.6.7",
+    "emmet-core>=0.85.1",
     "google-cloud-logging>=3.13.0",
     "jaxtyping>=0.3.6",
+    "lightning>=2.6.1",
+    "mattergen>=1.0.3",
+    "numpy>=2.2.6",
+    "omegaconf>=2.3.0",
+    "pandas>=2.3.3",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "pymatgen>=2025.10.7",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
+    "torch-scatter>=2.1.2",
 ]
 
 [dependency-groups]
@@ -36,6 +47,12 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools"]
+
+[tool.uv.extra-build-dependencies]
+torch-scatter = ["torch"]
+
+[tool.uv]
+dependency-metadata = [{ name = "mattergen", version = "1.0.3" }]
 
 [build-system]
 requires = ["hatchling"]

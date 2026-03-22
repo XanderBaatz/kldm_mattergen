@@ -8,6 +8,7 @@ from mattergen.common.data.transform import Transform  # noqa: TC002
 from mattergen.common.utils.globals import PROPERTY_SOURCE_IDS
 from pymatgen.symmetry.groups import SpaceGroup
 from torch.utils.data import Dataset
+from tqdm.auto import tqdm
 
 
 # Inspired by: https://docs.pytorch.org/vision/stable/_modules/torchvision/datasets/mnist.html
@@ -122,11 +123,24 @@ class CrystalDatasetWrapper(Dataset):
         if self._check_exists_raw():
             return
 
-        Path.mkdir(self.raw_folder, exist_ok=True, parents=True)
-        response = requests.get(url=self.url + self.split + ".csv", timeout=40)
+        self.raw_folder.mkdir(parents=True, exist_ok=True)
+
+        response = requests.get(url=self.url + f"{self.split}.csv", stream=True, timeout=40)
         response.raise_for_status()
-        with Path.open(self.raw_folder / f"{self.split}.csv", "wb") as f:
-            f.write(response.content)
+
+        total_size = int(response.headers.get("content-length", 0))
+        chunk_size = 1024
+
+        output_file = self.raw_folder / f"{self.split}.csv"
+
+        with (
+            Path.open(output_file, "wb") as f,
+            tqdm(total=total_size, unit="B", unit_scale=True, desc=f"Downloading {self.dataset_name} {self.split} dataset") as pbar,
+        ):
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    pbar.update(len(chunk))
 
 
 class Carbon24(CrystalDatasetWrapper):

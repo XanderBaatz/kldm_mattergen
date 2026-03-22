@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import pandas as pd
 import requests
 from mattergen.common.data.chemgraph import ChemGraph  # noqa: TC002
 from mattergen.common.data.dataset import CrystalDataset, CrystalDatasetBuilder
 from mattergen.common.data.transform import Transform  # noqa: TC002
+from mattergen.common.utils.globals import PROPERTY_SOURCE_IDS
+from pymatgen.symmetry.groups import SpaceGroup
 from torch.utils.data import Dataset
 
 
@@ -13,6 +16,8 @@ class CrystalDatasetWrapper(Dataset):
 
     dataset_name = "crystal_structure_dataset"
     url = "https://example.com/"  # Placeholder URL
+
+    properties_map: dict[str, str] = {}  # Mapping from raw property names to standardized property names used in ChemGraph  # noqa: RUF012
 
     def __init__(
         self,
@@ -40,7 +45,24 @@ class CrystalDatasetWrapper(Dataset):
             msg = "Dataset not found. You can use download=True to download it"
             raise RuntimeError(msg)
 
+        self.df, self.properties = self._prepare_df()  # Load the raw CSV data into a DataFrame and extract property names
         self.data: CrystalDataset = self._build()
+
+    def _prepare_df(self) -> tuple[pd.DataFrame, list[str]]:
+        """Prepare the DataFrame by renaming columns and extracting property names."""
+        df = pd.read_csv(self.raw_folder / f"{self.split}.csv")
+        df = df.rename(columns=self.properties_map)  # Rename columns based on the properties_map
+
+        space_group_map = {
+            i: SpaceGroup.from_int_number(i).symbol for i in range(1, len(SpaceGroup.full_sg_mapping) + 1)
+        }  # Precompute space group mappings
+
+        # Convert numeric space_group to Hermann-Mauguin string symbols
+        if "space_group" in df.columns:
+            df["space_group"] = df["space_group"].map(space_group_map)  # Map numeric space group to string symbols
+
+        properties = list(set(df.columns) & set(PROPERTY_SOURCE_IDS))  # Extract the standardized property names
+        return df, properties
 
     def _build(self) -> CrystalDataset:
         """Build the dataset using CrystalDatasetBuilder."""
@@ -54,10 +76,17 @@ class CrystalDatasetWrapper(Dataset):
                 cache_path=processed_path.__str__(),
                 transforms=self.transforms,
             )
+
+            for prop in self.properties:
+                if prop not in builder.property_names:  # Check if the property is already in the cache
+                    values = self.df[prop].to_numpy()
+                    data_dict = dict(zip(builder.structure_id, values, strict=False))
+                    builder.add_property_to_cache(prop, data_dict)
         else:
             builder = CrystalDatasetBuilder.from_cache_path(
                 cache_path=processed_path.__str__(),
                 transforms=self.transforms,
+                properties=self.properties,
             )
 
         return builder.build(dataset_class=CrystalDataset)
@@ -106,12 +135,24 @@ class Carbon24(CrystalDatasetWrapper):
     dataset_name = "carbon_24"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/carbon_24/"
 
+    properties_map = {  # noqa: RUF012
+        "energy_per_atom": "formation_energy_per_atom",
+        "spacegroup.number": "space_group",
+    }
+
 
 class MP20(CrystalDatasetWrapper):
     """MP-20 dataset first published by Jain et al., 2013."""
 
     dataset_name = "mp_20"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mp_20/"
+
+    properties_map = {  # noqa: RUF012
+        "formation_energy_per_atom": "formation_energy_per_atom",
+        "band_gap": "dft_band_gap",
+        "e_above_hull": "energy_above_hull",
+        "spacegroup.number": "space_group",
+    }
 
 
 class MPTS52(CrystalDatasetWrapper):
@@ -120,6 +161,11 @@ class MPTS52(CrystalDatasetWrapper):
     dataset_name = "mpts_52"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/mpts_52/"
 
+    properties_map = {  # noqa: RUF012
+        "energy_above_hull": "energy_above_hull",
+        "formation_energy_per_atom": "formation_energy_per_atom",
+    }
+
 
 class Perov5(CrystalDatasetWrapper):
     """Perovskite dataset first published by Jha et al., 2018."""
@@ -127,11 +173,17 @@ class Perov5(CrystalDatasetWrapper):
     dataset_name = "perov_5"
     url = "https://raw.githubusercontent.com/jiaor17/DiffCSP/refs/heads/main/data/perov_5/"
 
+    properties_map = {  # noqa: RUF012
+        "heat_all": "formation_energy_per_atom",
+        "ind_gap": "dft_band_gap",
+        "spacegroup.number": "space_group",
+    }
+
 
 if __name__ == "__main__":
     dataset = Perov5(
         root="data",
-        split="val",
+        split="train",
         download=True,  # Set to True to download the dataset if not present
     )
     # print(dataset.data)  # noqa: ERA001

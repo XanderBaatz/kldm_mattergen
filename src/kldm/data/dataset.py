@@ -3,27 +3,28 @@ from pathlib import Path
 import pandas as pd
 import requests
 from mattergen.common.data.chemgraph import ChemGraph  # noqa: TC002
-from mattergen.common.data.dataset import CrystalDataset, CrystalDatasetBuilder
+from mattergen.common.data.dataset import CrystalDataset, CrystalDatasetBuilder, DatasetTransform
 from mattergen.common.data.transform import Transform  # noqa: TC002
 from mattergen.common.utils.globals import PROPERTY_SOURCE_IDS
 from pymatgen.symmetry.groups import SpaceGroup
 from torch.utils.data import Dataset
+from tqdm.auto import tqdm
 
 
 # Inspired by: https://docs.pytorch.org/vision/stable/_modules/torchvision/datasets/mnist.html
 class CrystalDatasetWrapper(Dataset):
     """Dataset class for loading crystal structures for CIF-compatible dataset."""
 
-    dataset_name = "crystal_structure_dataset"
-    url = "https://example.com/"  # Placeholder URL
-
-    properties_map: dict[str, str] = {}  # Mapping from raw property names to standardized property names used in ChemGraph  # noqa: RUF012
+    dataset_name: str
+    url: str  # Placeholder URL
+    properties_map: dict[str, str]  # Mapping from raw property names to standardized property names used in ChemGraph
 
     def __init__(
         self,
         root: str | Path,
         split: str = "train",
         transforms: list[Transform] | None = None,
+        dataset_transforms: list[DatasetTransform] | None = None,
         download: bool = False,  # noqa: FBT001, FBT002
     ) -> None:
         """Initialize the CrystalDatasetWrapper."""
@@ -37,6 +38,7 @@ class CrystalDatasetWrapper(Dataset):
 
         self.split = split
         self.transforms = transforms if transforms is not None else []
+        self.dataset_transforms = dataset_transforms if dataset_transforms is not None else []
 
         if download:
             self.download()
@@ -45,7 +47,7 @@ class CrystalDatasetWrapper(Dataset):
             msg = "Dataset not found. You can use download=True to download it"
             raise RuntimeError(msg)
 
-        self.df, self.properties = self._prepare_df()  # Load the raw CSV data into a DataFrame and extract property names
+        self._df_raw, self.properties = self._prepare_df()  # Load the raw CSV data into a DataFrame and extract property names
         self.data: CrystalDataset = self._build()
 
     def _prepare_df(self) -> tuple[pd.DataFrame, list[str]]:
@@ -66,7 +68,7 @@ class CrystalDatasetWrapper(Dataset):
 
     def _build(self) -> CrystalDataset:
         """Build the dataset using CrystalDatasetBuilder."""
-        processed_path = Path(self.processed_folder, f"{self.split}")
+        processed_path = self.processed_folder / f"{self.split}"
 
         if not self._check_exists_processed():
             self.processed_folder.mkdir(parents=True, exist_ok=True)
@@ -89,7 +91,7 @@ class CrystalDatasetWrapper(Dataset):
                 properties=self.properties,
             )
 
-        return builder.build(dataset_class=CrystalDataset)
+        return builder.build(dataset_class=CrystalDataset, dataset_transforms=self.dataset_transforms)
 
     def __getitem__(self, index: int) -> ChemGraph:
         """Return the sample at the given index."""
@@ -100,9 +102,17 @@ class CrystalDatasetWrapper(Dataset):
         return len(self.data)
 
     @property
+    def df(self) -> pd.DataFrame:
+        """Return the DataFrame, filtered by the indices if available."""
+        if len(self.data) != len(self._df_raw):
+            mask = self._df_raw["material_id"].isin(self.data.structure_id)
+            return self._df_raw[mask].reset_index(drop=True)
+        return self._df_raw
+
+    @property
     def raw_folder(self) -> Path:
         """Returns the path to the raw data folder."""
-        return Path(self.root, self.dataset_name, "raw")  # os.path.join(self.root, self.dataset_name, "raw")
+        return Path(self.root, self.dataset_name, "raw")
 
     @property
     def processed_folder(self) -> Path:
@@ -122,11 +132,24 @@ class CrystalDatasetWrapper(Dataset):
         if self._check_exists_raw():
             return
 
-        Path.mkdir(self.raw_folder, exist_ok=True, parents=True)
-        response = requests.get(url=self.url + self.split + ".csv", timeout=40)
+        self.raw_folder.mkdir(parents=True, exist_ok=True)
+
+        response = requests.get(url=self.url + f"{self.split}.csv", stream=True, timeout=40)
         response.raise_for_status()
-        with Path.open(self.raw_folder / f"{self.split}.csv", "wb") as f:
-            f.write(response.content)
+
+        total_size = int(response.headers.get("content-length", 0))
+        chunk_size = 1024
+
+        output_file = self.raw_folder / f"{self.split}.csv"
+
+        with (
+            Path.open(output_file, "wb") as f,
+            tqdm(total=total_size, unit="B", unit_scale=True, desc=f"Downloading {self.dataset_name} {self.split} dataset") as pbar,
+        ):
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    pbar.update(len(chunk))
 
 
 class Carbon24(CrystalDatasetWrapper):

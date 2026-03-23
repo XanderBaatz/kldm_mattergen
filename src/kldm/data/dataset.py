@@ -151,6 +151,21 @@ class CrystalDatasetWrapper(Dataset):
                     f.write(chunk)
                     pbar.update(len(chunk))
 
+    def __repr__(self) -> str:
+        """Return a string representation of the dataset."""
+        head = "Dataset " + self.__class__.__name__
+        body = [f"Number of samples: {self.__len__()}"]
+        if self.root is not None:
+            body.append(f"Root location: {self.root}")
+        if self.split is not None:
+            body.append(f"Split: {self.split}")
+        if len(self.transforms) > 0:
+            body.append(f"Transforms: {self.transforms}")
+        if len(self.dataset_transforms) > 0:
+            body.append(f"Dataset Transforms: {self.dataset_transforms}")
+        lines = [head] + [" " * 4 + line for line in body]
+        return "\n".join(lines)
+
 
 class Carbon24(CrystalDatasetWrapper):
     """Carbon-24 dataset first published by Jha et al., 2018."""

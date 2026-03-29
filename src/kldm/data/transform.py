@@ -286,3 +286,27 @@ class UnsqueezeLattice(Transform):
             l = l.unsqueeze(self.dim)  # (6,) -> (1, 6)  # noqa: E741
 
         return sample.replace(**{self.key: l})
+
+
+@functional_transform("batch_lattice")
+class BatchLattice(Transform):
+    """Ensure lattice feature `l` has a batch dimension.
+
+    Converts shape (6,) -> (1, 6) so PyG stacks to (B, 6) instead of concatenating to (B*6,).
+    """
+
+    def __init__(self, key: str = "l", dim: int = 0) -> None:
+        """Initialize the BatchLattice transform."""
+        self.key = key
+        self.dim = dim
+        self.out_key = f"{key}_batch"
+
+    def __call__(self, sample: ChemGraph) -> ChemGraph:
+        """Apply the BatchLattice transform to the specified key in the ChemGraph."""
+        l = getattr(sample, self.key)  # noqa: E741
+
+        # Only unsqueeze if it's flat (6,)
+        if l.ndim == 1:
+            l = l.unsqueeze(self.dim)  # (6,) -> (1, 6)  # noqa: E741
+
+        return sample.replace(**{self.out_key: l})

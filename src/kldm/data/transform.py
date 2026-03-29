@@ -1,13 +1,16 @@
 import json
 from collections import defaultdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
-from mattergen.common.data.chemgraph import ChemGraph  # noqa: TC002
 from mattergen.common.data.transform import Transform  # basically the same as BaseTransform, but immutable
 from torch import Tensor
 from torch_geometric.data.datapipes import functional_transform
 from torch_geometric.utils import dense_to_sparse, one_hot
+
+if TYPE_CHECKING:
+    from mattergen.common.data.chemgraph import ChemGraph
 
 
 class PlusOneAtomicNumbers(Transform):
@@ -263,3 +266,26 @@ class ConcatFeatures(Transform):
         features = [getattr(sample, key) for key in self.in_keys]
         concat_features = torch.cat(features, dim=self.dim)
         return sample.replace(**{self.out_key: concat_features})
+
+
+@functional_transform("unsqueeze_lattice")
+class UnsqueezeLattice(Transform):
+    """Ensure lattice feature `l` has a batch dimension.
+
+    Converts shape (6,) -> (1, 6) so PyG stacks to (B, 6) instead of concatenating to (B*6,).
+    """
+
+    def __init__(self, key: str = "l", dim: int = 0) -> None:
+        """Initialize the UnsqueezeLattice transform."""
+        self.key = key
+        self.dim = dim
+
+    def __call__(self, sample: ChemGraph) -> ChemGraph:
+        """Apply the UnsqueezeLattice transform to the specified key in the ChemGraph."""
+        l = getattr(sample, self.key)  # noqa: E741
+
+        # Only unsqueeze if it's flat (6,)
+        if l.ndim == 1:
+            l = l.unsqueeze(self.dim)  # (6,) -> (1, 6)  # noqa: E741
+
+        return sample.replace(**{self.key: l})

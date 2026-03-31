@@ -28,6 +28,7 @@ dependencies = [
     "torch>=2.10.0",
     "torch-geometric>=2.7.0",
     "torch-scatter>=2.1.2",
+    "torch-sparse>=0.6.18",
 ]
 
 [dependency-groups]
@@ -51,6 +52,7 @@ packages = ["tools"]
 
 [tool.uv.extra-build-dependencies]
 torch-scatter = ["torch"]
+torch-sparse = ["torch"]
 
 [tool.uv]
 dependency-metadata = [{ name = "mattergen", version = "1.0.3" }]

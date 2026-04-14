@@ -1,0 +1,45 @@
+# @package _global_
+#
+# Debug config — overrides defaults for fast iteration
+# Usage:  python -m kldm_new.scripts.train +experiment=debug
+
+seed: 0
+train: true
+test: false
+
+hidden_dim: 32
+time_dim: 32
+num_layers: 2
+num_freqs: 5
+
+val_every_n_epochs: 2
+
+datamodule:
+  train_batch_size: 8
+  val_batch_size: 8
+  test_batch_size: 8
+  num_workers: 0
+
+lit_module:
+  lr: 1e-3
+  with_ema: false
+  sampling_N: 10
+  sampling_corrector_steps: 1
+
+  score_model:
+    cutoff: 0.5
+    max_neighbors: 12
+
+callbacks:
+  model_checkpoint:
+    every_n_epochs: ${val_every_n_epochs}
+    save_top_k: 1
+  lr_monitor: null
+
+logger: null
+
+trainer:
+  max_epochs: 5
+  accelerator: cpu
+  devices: 1
+  enable_progress_bar: true

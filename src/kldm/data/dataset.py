@@ -81,7 +81,7 @@ class CrystalDatasetWrapper(Dataset):
 
             for prop in self.properties:
                 if prop not in builder.property_names:  # Check if the property is already in the cache
-                    values = self.df[prop].to_numpy()
+                    values = self._df_raw[prop].to_numpy()
                     data_dict = dict(zip(builder.structure_id, values, strict=False))
                     builder.add_property_to_cache(prop, data_dict)
         else:

@@ -1,5 +1,5 @@
 [project]
-name = "default"
+name = "kldm_new"
 version = "0.1.0"
 description = "This repository contains configurations to set up a Python development environment using VSCode's Dev Container feature. The environment includes uv and Ruff."
 
@@ -50,7 +50,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["tools"]
+packages = ["tools", "src/kldm_new"]
 
 [tool.uv.extra-build-dependencies]
 torch-scatter = ["torch"]

@@ -4,17 +4,22 @@ Provides :class:`KLDMLoss` which computes:
 
 * **TDM loss** on velocity — MSE between the model output and the
   wrapped-normal score target (simplified parameterization).
-* **Cell loss** — standard denoising-score-matching (score × std) loss
-  on the 3×3 lattice matrix.
+* **Cell loss** — standard denoising-score-matching (score x std) loss
+  on the 3x3 lattice matrix.
 """
 
 from __future__ import annotations
 
-from mattergen.diffusion.data.batched_data import BatchedData
-from torch import Tensor
+from typing import TYPE_CHECKING
+
+import torch  # noqa: TC002
+from torch import Tensor  # noqa: TC002
 from torch_scatter import scatter_mean
 
-from kldm_new.diffusion.corruption import KLDMMultiCorruption
+from kldm_new.diffusion.corruption import KLDMMultiCorruption  # noqa: TC001
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.data.batched_data import BatchedData
 
 
 class KLDMLoss:
@@ -33,11 +38,12 @@ class KLDMLoss:
         self,
         weight_vel: float = 1.0,
         weight_cell: float = 1.0,
-    ):
+    ) -> None:
+        """Initialize the KLDM loss with specified weights for velocity and cell losses."""
         self.weight_vel = weight_vel
         self.weight_cell = weight_cell
 
-    def __call__(
+    def __call__(  # noqa: PLR0913
         self,
         *,
         multi_corruption: KLDMMultiCorruption,
@@ -45,7 +51,7 @@ class KLDMLoss:
         noisy_batch: BatchedData,
         score_model_output: BatchedData,
         t: Tensor,
-        node_is_unmasked: Tensor | None = None,
+        node_is_unmasked: torch.LongTensor | None = None,
     ) -> tuple[Tensor, dict[str, float]]:
         """Compute the total loss.
 
@@ -62,6 +68,11 @@ class KLDMLoss:
 
         """
         pos_batch_idx = noisy_batch.get_batch_idx("pos")
+
+        if pos_batch_idx is None:
+            msg = "pos_batch_idx cannot be None"
+            raise ValueError(msg)
+
         batch_size = noisy_batch.get_batch_size()
 
         # ----- Velocity (TDM) loss -----

@@ -18,7 +18,7 @@ class SubVPSDE(BaseVPSDE):
     """
 
     def __init__(self, beta_min: float = 0.1, beta_max: float = 20) -> None:
-        """Variance-preserving SDE with drift coefficient changing linearly over time."""
+        """Sub variance-preserving SDE with drift coefficient changing linearly over time."""
         super().__init__()
         self.beta_0 = beta_min
         self.beta_1 = beta_max
@@ -27,7 +27,7 @@ class SubVPSDE(BaseVPSDE):
         """Linear beta scheduler."""
         return self.beta_0 + t * (self.beta_1 - self.beta_0)
 
-    def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:
+    def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:  # alpha
         log_mean_coeff = -0.25 * t**2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
         return torch.exp(log_mean_coeff)
 
@@ -41,9 +41,12 @@ class SubVPSDE(BaseVPSDE):
         """Variance preserving SDE."""
         beta_t = self.beta(t)
         drift = -0.5 * maybe_expand(beta_t, batch_idx, x) * x
+
         mean_coeff = self._marginal_mean_coeff(t)  # alpha_t
         discount = 1.0 - torch.pow(mean_coeff, 4)  # ensure variance is strictly less than 1, so that this is a "sub" VPSDE
+
         diffusion = maybe_expand(torch.sqrt(beta_t * discount), batch_idx, x)
+
         return drift, diffusion
 
     def marginal_prob(

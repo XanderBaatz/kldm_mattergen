@@ -1,0 +1,48 @@
+# --------------------------------------------------------------------------- #
+# KLDM-New  ·  Training Config  (Hydra structured defaults)
+# --------------------------------------------------------------------------- #
+# Usage:
+#   python -m kldm_new.scripts.train                          # defaults (MP-20)
+#   python -m kldm_new.scripts.train trainer=gpu              # GPU trainer
+#   python -m kldm_new.scripts.train data=mp_20               # explicit dataset
+#   python -m kldm_new.scripts.train experiment=debug        # quick debug
+#   python -m kldm_new.scripts.train logger=csv               # CSV only
+# --------------------------------------------------------------------------- #
+
+defaults:
+  - _self_
+  - data: mp_20
+  - model: kldm
+  - callbacks: default
+  - logger: wandb
+  - trainer: default
+  - paths: default
+  - hydra: default
+  - optional experiment: null # set via +experiment=<name>
+
+# --------------------------------------------------------------------------- #
+#  Global
+# --------------------------------------------------------------------------- #
+seed: 42
+project: "kldm_new"
+tags: [ mp_20, csp ]
+
+train: true
+test: false
+ckpt_path: null
+
+# Architecture (interpolated by model config)
+hidden_dim: 512
+time_dim: 256
+num_layers: 6
+num_freqs: 128
+
+# Loss
+loss_weights:
+  vel: 1.0
+  cell: 1.0
+
+# Monitoring
+monitor_metric: "val/total"
+monitor_mode: "min"
+val_every_n_epochs: 50

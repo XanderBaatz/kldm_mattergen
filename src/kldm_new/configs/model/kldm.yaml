@@ -1,0 +1,45 @@
+_target_: kldm_new.model.lit_module.LitKLDM
+
+score_model:
+  _target_: kldm_new.model.KLDMScoreModel
+  cutoff: 0.5
+  max_neighbors: 20
+  net:
+    _target_: kldm_new.nn.arch.CSPVCellNet
+    hidden_dim: ${hidden_dim}
+    time_dim: ${time_dim}
+    num_layers: ${num_layers}
+    h_dim: 100
+    num_freqs: ${num_freqs}
+    ln: true
+    smooth: false
+    pred_vel: true
+    pred_cell: true
+    pred_h: false
+    zero_cog: true
+
+multi_corruption:
+  _target_: kldm_new.diffusion.corruption.KLDMMultiCorruption
+  pos_sde:
+    _target_: kldm_new.diffusion.tdm.KineticLangevinSDE
+    scale_pos: 1.0
+    tf: 2.0
+    k_wn_score: 13
+    simplified_parameterization: true
+  cell_sde:
+    _target_: kldm_new.diffusion.lattice_sde.LatticeVPSDE
+    beta_min: 0.1
+    beta_max: 20.0
+    limit_density: 0.05
+
+loss_fn:
+  _target_: kldm_new.diffusion.loss.KLDMLoss
+  weight_vel: ${loss_weights.vel}
+  weight_cell: ${loss_weights.cell}
+
+lr: 5e-4
+with_ema: true
+ema_decay: 0.999
+ema_start: 500
+sampling_N: 1000
+sampling_corrector_steps: 1

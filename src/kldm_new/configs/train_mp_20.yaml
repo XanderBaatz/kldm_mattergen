@@ -10,7 +10,7 @@
 
 seed: 42
 project: "kldm_new"
-tags: [mp_20, csp]
+tags: [ mp_20, csp ]
 
 train: true
 test: false
@@ -141,6 +141,11 @@ logger:
     group: ""
     tags: ${tags}
     job_type: ""
+  csv:
+    _target_: pytorch_lightning.loggers.CSVLogger
+    save_dir: ${output_dir}
+    name: "csv/"
+    prefix: ""
 
 # --------------------------------------------------------------------------- #
 #  Trainer

@@ -9,6 +9,15 @@ data/*
 # Icon must end with two \r
 Icon
 
+# Other repos
+src/kldm_frnct
+src/kldm_mattergen
+src/tdm
+src/kldm
+
+# Runs
+runs/*
+outputs/*
 
 # Thumbnails
 ._*

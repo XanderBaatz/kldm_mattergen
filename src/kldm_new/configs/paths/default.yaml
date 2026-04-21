@@ -1,0 +1,7 @@
+# Paths configuration
+# Override via environment variables or CLI
+
+log_dir: ${oc.env:LOG_PATH,outputs}
+output_dir: ${hydra:runtime.output_dir}
+work_dir: ${hydra:runtime.cwd}
+data_path: ${oc.env:DATA_PATH,data}/mp_20/processed

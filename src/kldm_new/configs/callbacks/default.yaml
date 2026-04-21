@@ -1,0 +1,20 @@
+model_checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  dirpath: ${paths.output_dir}/checkpoints
+  filename: "epoch_{epoch:04d}-loss_{val/total:.4f}"
+  monitor: ${monitor_metric}
+  verbose: false
+  save_last: true
+  save_top_k: 3
+  mode: ${monitor_mode}
+  auto_insert_metric_name: false
+  save_weights_only: false
+  every_n_epochs: ${val_every_n_epochs}
+  save_on_train_epoch_end: true
+
+lr_monitor:
+  _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  logging_interval: "step"
+
+rich_progress:
+  _target_: pytorch_lightning.callbacks.RichProgressBar

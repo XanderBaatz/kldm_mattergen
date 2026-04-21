@@ -1,24 +1,22 @@
 """Lattice corruption - re-exports MatterGen's LatticeVPSDE for cell 3x3."""
 
-from typing import TYPE_CHECKING
-
-import torch
-
-from kldm_new.diffusion.sde import SubVPSDE
+import torch  # noqa: I001, RUF100
 from mattergen.common.diffusion.corruption import (
     LatticeVPSDE,
     expand,
     make_noise_symmetric_preserve_variance,
 )
 from mattergen.diffusion.corruption.corruption import B, maybe_expand
+from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
 
-if TYPE_CHECKING:
-    from mattergen.diffusion.data.batched_data import BatchedData
+from kldm_new.diffusion.sde import SubVPSDE
 
-__all__ = ["LatticeVPSDE", "make_noise_symmetric_preserve_variance"]
+__all__ = ["LatticeSubVPSDE", "LatticeVPSDE", "make_noise_symmetric_preserve_variance"]
 
 
 class LatticeSubVPSDE(SubVPSDE):
+    """Sub-VP SDE for lattice diffusion, with mean re-centered on a density-based limit computed."""
+
     @staticmethod
     def from_subvpsde_config(subvpsde_config: dict) -> "LatticeSubVPSDE":  # noqa: UP037
         """Construct a LatticeSubVPSDE from a SubVPSDE config."""
@@ -34,6 +32,7 @@ class LatticeSubVPSDE(SubVPSDE):
         limit_var_scaling_constant: float = 0.25,
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
+        """Initialize the LatticeSubVPSDE with specified parameters for the SDE and limit distribution."""
         super().__init__()
         self.beta_0 = beta_min
         self.beta_1 = beta_max
@@ -45,9 +44,14 @@ class LatticeSubVPSDE(SubVPSDE):
 
     @property
     def limit_info_key(self) -> str:
+        """Key in the batch to use for computing the density-based limit distribution.
+
+        Should be a per-graph scalar, e.g. number of atoms, that can be used to compute the mean and variance of the limit distribution.
+        """
         return self._limit_info_key
 
     def beta(self, t: torch.Tensor) -> torch.Tensor:
+        """Linear beta scheduler."""
         return self.beta_0 + t * (self.beta_1 - self.beta_0)
 
     def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:  # alpha
@@ -61,6 +65,7 @@ class LatticeSubVPSDE(SubVPSDE):
         batch_idx: B = None,
         batch: BatchedData | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the mean and standard deviation of the marginal distribution at time t."""
         assert batch is not None  # noqa: S101
 
         mean_coeff = self._marginal_mean_coeff(t)
@@ -69,9 +74,10 @@ class LatticeSubVPSDE(SubVPSDE):
         limit_var = self.get_limit_var(x=x, batch=batch)
 
         mean_coeff_expanded = maybe_expand(mean_coeff, batch_idx, x)
-
         mean = mean_coeff_expanded * x + (1 - mean_coeff_expanded) * limit_mean
-        std = torch.sqrt((1.0 - mean_coeff_expanded**2) * limit_var)
+
+        std = torch.sqrt(limit_var) * maybe_expand(1.0 - torch.pow(mean_coeff, 2), batch_idx, x)
+
         return mean, std
 
     def mean_coeff_and_std(
@@ -87,6 +93,7 @@ class LatticeSubVPSDE(SubVPSDE):
         return maybe_expand(mean_coeff, batch=None, like=x), std
 
     def get_limit_mean(self, x: torch.Tensor, batch: BatchedData) -> torch.Tensor:
+        """Compute the mean of the density-based limit distribution."""
         n_atoms = batch[self.limit_info_key]
 
         return torch.pow(
@@ -95,6 +102,7 @@ class LatticeSubVPSDE(SubVPSDE):
         ).to(x.device)
 
     def get_limit_var(self, x: torch.Tensor, batch: BatchedData) -> torch.Tensor:
+        """Compute the variance of the density-based limit distribution."""
         n_atoms = batch[self.limit_info_key]
 
         n_atoms_expanded = expand(n_atoms, x.shape)
@@ -110,6 +118,7 @@ class LatticeSubVPSDE(SubVPSDE):
         batch_idx: B = None,  # noqa: ARG002
         batch: BatchedData | None = None,
     ) -> torch.Tensor:
+        """Sample marginal for x(t) given x(0)."""
         mean, std = self.marginal_prob(x=x, t=t, batch=batch)
         z = torch.randn_like(x)
         z = make_noise_symmetric_preserve_variance(z)
@@ -121,6 +130,7 @@ class LatticeSubVPSDE(SubVPSDE):
         conditioning_data: BatchedData | None = None,
         batch_idx: B = None,  # noqa: ARG002
     ) -> torch.Tensor:
+        """Sample from the prior distribution at time T."""
         x_sample = torch.randn(*shape)
         x_sample = make_noise_symmetric_preserve_variance(x_sample)
 
@@ -140,6 +150,7 @@ class LatticeSubVPSDE(SubVPSDE):
         batch_idx: B = None,
         batch: BatchedData | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute the drift and diffusion of the SDE at time t for input x."""
         assert batch is not None  # noqa: S101
 
         # same mean as VPSDE

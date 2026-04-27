@@ -1,0 +1,69 @@
+# Build args
+ARG UV_VERSION=latest
+ARG CUDA_VERSION=13.2.1
+ARG UBUNTU_VERSION=24.04
+
+
+# uv installer layer
+FROM ghcr.io/astral-sh/uv:$UV_VERSION AS uv
+
+
+# Base CUDA image
+#FROM nvidia/cuda:$CUDA_VERSION-runtime-ubuntu$UBUNTU_VERSION
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu${UBUNTU_VERSION}
+
+
+
+ENV PYTHONDONTWRITEBYTECODE=True \
+    PYTHONUNBUFFERED=True \
+    UV_LINK_MODE=copy
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-dev \
+        python3-pip \
+        python3.12-venv \
+        git \
+        curl \
+        libgl1 \
+        libglib2.0-0 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python
+
+COPY --from=uv --chown=vscode: /uv /uvx /bin/
+
+ENV UV_PYTHON=python3.12 \
+    UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cu132"
+
+WORKDIR /workspace
+
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-install-project --no-dev
+
+COPY src/ src/
+COPY tools/ tools/
+
+RUN mkdir -p data
+
+
+ARG DATASET=mp_20
+ARG DOWNLOAD_DATA=0
+ENV DATASET=${DATASET}
+
+RUN if [ "${DOWNLOAD_DATA}" = "1" ]; then \
+        for SPLIT in train val test; do \
+            uv run python -c " \
+from src.kldm.data.dataset import DATASET_REGISTRY; \
+cls = DATASET_REGISTRY['${DATASET}']; \
+cls(root='data', split='$SPLIT', download=True) \
+"; \
+        done; \
+    fi
+
+ENTRYPOINT ["uv", "run", "python", "-m", "kldm_new.scripts.train"]
+CMD []

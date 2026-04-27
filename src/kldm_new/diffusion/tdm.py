@@ -15,11 +15,11 @@ require custom implementations (see ``predictors.py`` / ``correctors.py``).
 from __future__ import annotations
 
 import torch
-from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
-from mattergen.diffusion.corruption.sde_lib import SDE
 from torch import Tensor
 
 from kldm_new.diffusion import d_log_p_wrapped_normal, sigma_norm
+from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
+from mattergen.diffusion.corruption.sde_lib import SDE
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,35 +71,45 @@ class KineticLangevinSDE(SDE):
         Number of periodic images for the wrapped-normal score.
     simplified_parameterization : bool
         If ``True`` (default), the training target is re-weighted by
-        ``prefactor * sqrt(sigma_norm)`` which stabilises training.
+        ``prefactor * sqrt(sigma_norm)`` which stabilizes training.
 
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         scale_pos: float = 1.0,
         tf: float = 2.0,
         k_wn_score: int = 13,
-        simplified_parameterization: bool = True,
-    ):
+        simplified_parameterization: bool = True,  # noqa: FBT001, FBT002
+        gamma: float = 1.0,
+        conditional_velocity: bool = True,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Initialize the KineticLangevinSDE."""
         super().__init__()
         self.scale_pos = scale_pos
         self._tf = tf
         self.k_wn_score = k_wn_score
         self.simplified_parameterization = simplified_parameterization
+        self.gamma = gamma
+        self.conditional_velocity = conditional_velocity
+
+        if gamma <= 0.0:  # else we have imaginary diffusion coefficients and the SDE is not well-defined
+            msg = "gamma must be positive"
+            raise ValueError(msg)
 
     # ---- MatterGen SDE interface ------------------------------------------
 
     @property
-    def T(self) -> float:
+    def T(self) -> float:  # noqa: N802
+        """The end time of the diffusion process."""
         return self._tf
 
     def sde(
         self,
         x: Tensor,
-        t: Tensor,
-        batch_idx: B = None,
-        batch: BatchedData | None = None,
+        t: Tensor,  # noqa: ARG002
+        batch_idx: B = None,  # noqa: ARG002
+        batch: BatchedData | None = None,  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
         """Instantaneous drift and diffusion for *velocity*.
 
@@ -107,9 +117,9 @@ class KineticLangevinSDE(SDE):
         Position is propagated deterministically via ``dpos = v dt``
         and must be handled by the predictor.
         """
-        v = x  # SDE acts on velocity
-        drift = -v
-        diffusion = torch.full_like(v, 2.0**0.5)
+        # SDE acts on velocity (x=v)
+        drift = -self.gamma * x
+        diffusion = torch.full_like(x, (2.0 * self.gamma) ** 0.5)
         return drift, diffusion
 
     # ---- Marginal distributions -------------------------------------------
@@ -119,44 +129,65 @@ class KineticLangevinSDE(SDE):
         x: Tensor,
         t: Tensor,
         batch_idx: B = None,
-        batch: BatchedData | None = None,
+        batch: BatchedData | None = None,  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
-        """Marginal mean and std for **velocity** at time *t*.
+        r"""Marginal mean and std for velocity at time t.
 
-        .. math::
-            v_t \\sim \\mathcal{N}(e^{-t} v_0,\\; (1-e^{-2t}) I)
-        """
+        v_t | v_0 ~ N(exp(-γt) v_0, (1 - exp(-2γt)) I)
+        """  # noqa: RUF002
         t_exp = maybe_expand(t, batch_idx, x)
-        mean_coeff = torch.exp(-t_exp)
-        mean = mean_coeff * x
-        std = torch.sqrt(1.0 - torch.exp(-2.0 * t_exp))
+        mean = torch.exp(-self.gamma * t_exp) * x
+        std = torch.sqrt((1.0 - torch.exp(-2.0 * self.gamma * t_exp)).clamp(min=1e-12))
         return mean, std
 
     def _displacement_marginal(
         self,
         v0: Tensor,
         t: Tensor,
+        vt: Tensor | None = None,
         batch_idx: B = None,
     ) -> tuple[Tensor, Tensor]:
-        """Marginal mean and std of the **displacement** *r* at time *t*.
+        r"""Marginal mean and std of the **displacement** *r* at time *t*.
 
-        .. math::
-            \\mu_r = (1 - e^{-t}) v_0
-            \\sigma_r^2 = 2t - 3 + 4 e^{-t} - e^{-2t}
+        Conditional (conditional_velocity=True, vt required) — Corollary:
+            mu_r  = (1 - exp(-γt)) / (γ(1 + exp(-γt))) · (vt + v0)
+            σ_r²  = (2/γ²)(γt + 4γ/(exp(γt)+1) - 2γ)
+
+        Marginal (conditional_velocity=False) — Lemma:
+            mu_r  = (1 - exp(-γt)) / γ · v0
+            σ_r²  = (2/γ²)(γt - 2(1-exp(-γt)) + ½(1-exp(-2γt)))
 
         Args:
             v0: Initial velocity, shape ``(N, 3)``.
             t: Diffusion time, shape ``(B, 1)`` or broadcastable.
+            vt: Velocity at time t
             batch_idx: Maps atoms → graphs.
 
         Returns:
             ``(mu_r, sigma_r)`` each with shape ``(N, 3)``.
 
-        """
+        """  # noqa: RUF002
+        gamma = self.gamma
         t_exp = maybe_expand(t, batch_idx, v0)
-        mu_r = (1.0 - torch.exp(-t_exp)) * v0
-        sigma_r_sq = 2.0 * t_exp - 3.0 + 4.0 * torch.exp(-t_exp) - torch.exp(-2.0 * t_exp)
+        exp_gt = torch.exp(-gamma * t_exp)
+
+        if self.conditional_velocity:
+            if vt is None:
+                msg = "vt must be provided when conditional_velocity is True"
+                raise ValueError(msg)
+
+            # Conditional
+            mu_r = ((1.0 - exp_gt) / (gamma * (1.0 + exp_gt))) * (v0 + vt)
+
+            sigma_r_sq = (2.0 / gamma**2) * (gamma * t_exp + (4.0 * gamma) / (torch.exp(gamma * t_exp) + 1.0) - 2.0 * gamma)
+        else:
+            # Marginal
+            mu_r = ((1.0 - exp_gt) / gamma) * v0
+
+            sigma_r_sq = (2.0 / gamma**2) * (gamma * t_exp - 2.0 * (1.0 - exp_gt) + 0.5 * (1.0 - torch.exp(-2.0 * gamma * t_exp)))
+
         sigma_r = torch.sqrt(torch.clamp(sigma_r_sq, min=1e-12))
+
         return mu_r, sigma_r
 
     def sample_marginal(
@@ -174,28 +205,38 @@ class KineticLangevinSDE(SDE):
         mean, std = self.marginal_prob(x, t, batch_idx, batch)
         return mean + std * torch.randn_like(x)
 
-    def sample_pos_marginal(
+    def sample_pos(
         self,
         pos_0: Tensor,
         v_0: Tensor,
+        v_t: Tensor,
         t: Tensor,
         batch_idx: B = None,
     ) -> Tensor:
-        """Sample noisy **position** (fractional coords) at time *t*.
+        """Sample noisy position at time t.
 
-        ``pos_t = wrap(pos_0 + wrap(mu_r + sigma_r * eps))``
+        Delegates to :meth:`_displacement_marginal` which selects the correct
+        distribution based on ``conditional_velocity``:
+
+        - ``conditional_velocity=True`` (Corollary): ``Y_t | v_t, v_0`` - requires ``v_t``.
+        - ``conditional_velocity=False`` (Lemma): ``Y_t | v_0`` - ``v_t`` is ignored.
+
+        Raises
+        ------
+        ValueError
+            If ``conditional_velocity=True`` but ``v_t`` is ``None``.
+
         """
-        mu_r, sigma_r = self._displacement_marginal(v_0, t, batch_idx)
+        mu_r, sigma_r = self._displacement_marginal(v0=v_0, t=t, vt=v_t, batch_idx=batch_idx)
         eps = torch.randn_like(pos_0)
         r = mu_r + sigma_r * eps
-        pos_t = _wrap(pos_0 + _wrap(r, self.scale_pos), self.scale_pos)
-        return pos_t
+        return _wrap(pos_0 + _wrap(r, self.scale_pos), self.scale_pos)
 
     def prior_sampling(
         self,
         shape: torch.Size | tuple,
-        conditioning_data: BatchedData | None = None,
-        batch_idx: B = None,
+        conditioning_data: BatchedData | None = None,  # noqa: ARG002
+        batch_idx: B = None,  # noqa: ARG002
     ) -> Tensor:
         """Sample velocity from the stationary distribution ``N(0, I)``."""
         return torch.randn(*shape)
@@ -203,26 +244,35 @@ class KineticLangevinSDE(SDE):
     def prior_logp(
         self,
         z: Tensor,
-        batch_idx: B = None,
-        batch: BatchedData | None = None,
+        batch_idx: B = None,  # noqa: ARG002
+        batch: BatchedData | None = None,  # noqa: ARG002
     ) -> Tensor:
         """Log-probability under the velocity prior ``N(0, I)``."""
         d = z.shape[-1]
         logp = -0.5 * d * torch.log(torch.tensor(2.0 * torch.pi, device=z.device))
-        logp = logp - 0.5 * (z**2).sum(dim=-1)
-        return logp
+        return logp - 0.5 * (z**2).sum(dim=-1)
 
     # ---- Training target --------------------------------------------------
 
-    def training_target(
+    def _prefactor_t(self, t_exp: Tensor) -> Tensor:
+        """(1-exp(-γt))/(1+exp(-γt)) prefactor, generalized to arbitrary γ.
+
+        At γ=1 this matches the original TDM's _prefactor_t.
+        Used inside training_target for simplified parameterization.
+        """  # noqa: RUF002
+        exp_gt = torch.exp(-self.gamma * t_exp)
+        return (1.0 - exp_gt) / (1.0 + exp_gt).clamp(min=1e-8)
+
+    def training_target(  # noqa: PLR0913
         self,
         pos_0: Tensor,
         pos_t: Tensor,
         v_0: Tensor,
         t: Tensor,
+        v_t: Tensor | None = None,
         batch_idx: B = None,
     ) -> Tensor:
-        """Compute the training target for the score network.
+        r"""Compute the training target for the score network.
 
         The target is the **score of the wrapped-normal displacement**:
 
@@ -238,30 +288,35 @@ class KineticLangevinSDE(SDE):
             pos_t: Noisy positions ``(N, 3)``.
             v_0: Clean velocities ``(N, 3)``.
             t: Diffusion time ``(B, 1)``.
+            v_t: Noisy velocities at time t (required if conditional_velocity=True).
             batch_idx: Atom → graph mapping ``(N,)``.
 
         Returns:
             Target tensor ``(N, 3)``.
 
         """
-        mu_r, sigma_r = self._displacement_marginal(v_0, t, batch_idx)
+        t_exp = maybe_expand(t, batch_idx, pos_0)
 
-        # Displacement (unwrapped difference, mapped to [-T/2, T/2])
+        mu_r, sigma_r = self._displacement_marginal(
+            v0=v_0,
+            t=t,
+            vt=v_t if self.conditional_velocity else None,
+            batch_idx=batch_idx,
+        )
+
+        # Displacement mapped to [-scale/2, scale/2]
         diff = pos_t - pos_0
         r = torch.remainder(diff + self.scale_pos / 2, self.scale_pos) - self.scale_pos / 2
 
         score_wn = d_log_p_wrapped_normal(r, mu_r, sigma_r, N=self.k_wn_score, T=self.scale_pos)
 
-        if self.simplified_parameterization:
-            # prefactor = sigma_r / sqrt(1 - exp(-2t))
-            t_exp = maybe_expand(t, batch_idx, pos_0)
-            vel_std = torch.sqrt(1.0 - torch.exp(-2.0 * t_exp))
-            prefactor = sigma_r / vel_std.clamp(min=1e-8)
+        # Apply the prefactor (matches original TDM target_pos_t scaling)
+        prefactor = self._prefactor_t(t_exp)
+        target = prefactor * score_wn
 
+        if self.simplified_parameterization:
             sn = sigma_norm(sigma_r, T=self.scale_pos, N=self.k_wn_score)
-            target = score_wn * prefactor / torch.sqrt(sn.clamp(min=1e-8))
-        else:
-            target = score_wn
+            target = target / torch.sqrt(sn.clamp(min=1e-8))
 
         return target
 
@@ -273,9 +328,9 @@ class KineticLangevinSDE(SDE):
         pos: Tensor,
         score: Tensor,
         dt: float,
-        batch_idx: B = None,
+        batch_idx: B = None,  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
-        """Single Euler–Maruyama reverse step (exponential integrator).
+        """Single Euler-Maruyama reverse step (exponential integrator).
 
         Args:
             v: Current velocity ``(N, 3)``.
@@ -288,16 +343,17 @@ class KineticLangevinSDE(SDE):
             ``(v_new, pos_new)``
 
         """
-        exp_dt = torch.exp(torch.tensor(dt, device=v.device))
-        expm1_dt = _expm1(torch.tensor(dt, device=v.device))
-        expm1_2dt = _expm1(torch.tensor(2.0 * dt, device=v.device))
+        gamma = self.gamma
+        exp_dt = torch.exp(torch.tensor(gamma * dt, device=v.device))
+        expm1_dt = _expm1(torch.tensor(gamma * dt, device=v.device))
+        expm1_2dt = _expm1(torch.tensor(2.0 * gamma * dt, device=v.device))
 
         noise = torch.randn_like(v)
         v_new = exp_dt * v + 2.0 * expm1_dt * score + torch.sqrt(expm1_2dt.abs()) * noise
         pos_new = _wrap(pos - dt * v_new, self.scale_pos)
         return v_new, pos_new
 
-    def reverse_step_pc_predictor(
+    def reverse_step_pc_predictor(  # noqa: PLR0913
         self,
         v: Tensor,
         pos: Tensor,
@@ -314,8 +370,8 @@ class KineticLangevinSDE(SDE):
         t_exp = maybe_expand(t, batch_idx, v)
         s = t_exp - dt  # target time
 
-        alpha_t = torch.exp(-t_exp)
-        alpha_s = torch.exp(-s.clamp(min=0.0))
+        alpha_t = torch.exp(-self.gamma * t_exp)
+        alpha_s = torch.exp(-self.gamma * s.clamp(min=0.0))
 
         sigma_t = torch.sqrt((1.0 - alpha_t**2).clamp(min=1e-12))
         sigma_s = torch.sqrt((1.0 - alpha_s**2).clamp(min=1e-12))
@@ -333,7 +389,7 @@ class KineticLangevinSDE(SDE):
         pos: Tensor,
         score: Tensor,
         tau: float = 0.5,
-        batch_idx: B = None,
+        batch_idx: B = None,  # noqa: ARG002
     ) -> tuple[Tensor, Tensor]:
         """Langevin corrector on **velocity** with adaptive step size.
 

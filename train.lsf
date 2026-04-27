@@ -1,0 +1,100 @@
+#!/bin/bash
+set -euo pipefail
+
+# ---------------- LSF CONFIG ----------------
+#BSUB -J kldm_new_a100
+#BSUB -q gpua100
+#BSUB -n 4
+#BSUB -R "span[hosts=1]"
+#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -R "rusage[mem=8GB]"
+#BSUB -W 24:00
+#BSUB -o logs/kldm_new_%J.out
+#BSUB -e logs/kldm_new_%J.err
+
+# ---------------- SETUP ----------------
+
+cd ~/kldm_mattergen || cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+
+# ---------------- ENV VARS ----------------
+
+export DATA_PATH="${DATA_PATH:-$PWD/data}"
+export LOG_PATH="${LOG_PATH:-$PWD/artifacts/HPC}"
+export WANDB_PROJECT="${WANDB_PROJECT:-kldm_new}"
+export WANDB__SERVICE_WAIT="${WANDB__SERVICE_WAIT:-300}"
+export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+if [ -f "$HOME/.wandb_env" ]; then
+    source "$HOME/.wandb_env"
+fi
+
+# ---------------- DIRECTORIES ----------------
+
+mkdir -p logs "$LOG_PATH" "$DATA_PATH"
+
+# ---------------- DOCKER IMAGE ----------------
+
+IMAGE_NAME="${IMAGE_NAME:-kldm_new:train}"
+
+# Build the training image from the required Dockerfile if it does not exist yet.
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    docker build -f Dockerfile.train -t "$IMAGE_NAME" .
+fi
+
+# ---------------- DOWNLOAD DATA ----------------
+
+echo "Downloading/verifying dataset via src/kldm/data/dataset.py ..."
+docker run --rm \
+    --entrypoint uv \
+    -v "$PWD:/workspace" \
+    -w /workspace \
+    "$IMAGE_NAME" \
+    run python -c "
+from src.kldm.data.dataset import MP20
+for split in ('train', 'val', 'test'):
+        MP20(root='data', split=split, download=True)
+"
+echo "Dataset ready."
+
+# ---------------- DEBUG INFO ----------------
+
+echo "====================================="
+echo "Starting KLDM-New job"
+echo "Host: $(hostname)"
+echo "Date: $(date)"
+echo "CUDA:"
+nvidia-smi || echo "No GPU visible yet"
+echo "WANDB:"
+env | grep WANDB || echo "No WANDB env found"
+echo "====================================="
+
+# ---------------- TRAIN ----------------
+
+# Training runs inside the container built from Dockerfile.train.
+# We override the image entrypoint to avoid hardcoded experiment=debug.
+# DATA_PATH and LOG_PATH are consumed from environment by Hydra config.
+docker run --rm --gpus all \
+    --entrypoint uv \
+    -e DATA_PATH=/workspace/data \
+    -e LOG_PATH=/workspace/artifacts/HPC \
+    -e WANDB_API_KEY \
+    -e WANDB_ENTITY \
+    -e WANDB_PROJECT \
+    -e WANDB__SERVICE_WAIT \
+    -e PYTHONUNBUFFERED \
+    -e OMP_NUM_THREADS \
+    -e MKL_NUM_THREADS \
+    -v "$PWD:/workspace" \
+    -w /workspace \
+    "$IMAGE_NAME" \
+    run python -m kldm_new.scripts.train \
+        --config-name train \
+        logger=wandb \
+        trainer.devices=1 \
+        "$@"
+
+# ---------------- DONE ----------------
+
+echo "Training finished at $(date)"

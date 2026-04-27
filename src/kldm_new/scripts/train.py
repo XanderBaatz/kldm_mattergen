@@ -9,7 +9,7 @@ python -m kldm_new.scripts.train
 python -m kldm_new.scripts.train trainer.devices=4 datamodule.train_batch_size=512
 
 # Debug (tiny model, CPU, no logging)
-python -m kldm_new.scripts.train +experiment=debug
+python -m kldm_new.scripts.train experiment=debug
 
 # Resume from checkpoint
 python -m kldm_new.scripts.train ckpt_path=/path/to/checkpoint.ckpt
@@ -65,12 +65,12 @@ def train(cfg: DictConfig) -> tuple[dict, dict[str, Any]]:
         pl.seed_everything(cfg.seed, workers=True)
 
     # DataModule
-    log.info(f"Instantiating datamodule <{cfg.datamodule._target_}>")
-    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
+    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
+    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.data)
 
     # LightningModule
-    log.info(f"Instantiating lit_module <{cfg.lit_module._target_}>")
-    lit_module: pl.LightningModule = hydra.utils.instantiate(cfg.lit_module)
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    lit_module: pl.LightningModule = hydra.utils.instantiate(cfg.model)
 
     # Callbacks
     log.info("Instantiating callbacks …")
@@ -134,7 +134,7 @@ def train(cfg: DictConfig) -> tuple[dict, dict[str, Any]]:
 
 @hydra.main(
     config_path=_CONFIGS_DIR,
-    config_name="train_mp_20",
+    config_name="train",
     version_base="1.3",
 )
 def main(cfg: DictConfig) -> float | None:

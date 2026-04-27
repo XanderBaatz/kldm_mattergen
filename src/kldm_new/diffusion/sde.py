@@ -1,14 +1,9 @@
-from typing import TYPE_CHECKING
-
-import torch
-
+import torch  # noqa: I001, RUF100
 from mattergen.diffusion.corruption.corruption import B, maybe_expand
 from mattergen.diffusion.corruption.sde_lib import VESDE, VPSDE, BaseVPSDE
+from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
 
-if TYPE_CHECKING:
-    from mattergen.diffusion.data.batched_data import BatchedData
-
-__all__ = ["VESDE", "VPSDE"]
+__all__ = ["VESDE", "VPSDE", "SubVPSDE"]
 
 
 class SubVPSDE(BaseVPSDE):

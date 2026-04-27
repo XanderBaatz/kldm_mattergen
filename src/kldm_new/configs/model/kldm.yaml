@@ -27,7 +27,7 @@ multi_corruption:
     k_wn_score: 13
     simplified_parameterization: true
   cell_sde:
-    _target_: kldm_new.diffusion.lattice_sde.LatticeVPSDE
+    _target_: kldm_new.diffusion.lattice_sde.LatticeSubVPSDE
     beta_min: 0.1
     beta_max: 20.0
     limit_density: 0.05

@@ -80,6 +80,7 @@ class KLDMLoss:
             pos_0=batch["pos"],
             pos_t=noisy_batch["pos"],
             v_0=batch["vel"],
+            v_t=noisy_batch["vel"],
             t=t,
             batch_idx=pos_batch_idx,
         )

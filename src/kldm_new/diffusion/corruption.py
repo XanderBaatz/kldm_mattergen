@@ -3,21 +3,19 @@
 This module provides :class:`KLDMMultiCorruption` which orchestrates
 the coupled kinetic-Langevin diffusion on fractional coordinates
 (via :class:`KineticLangevinSDE`) together with standard VP diffusion
-on the 3×3 lattice cell matrix (via :class:`LatticeVPSDE`).
+on the 3x3 lattice cell matrix (via :class:`LatticeVPSDE`).
 
 Because TDM couples position and velocity, the standard ``sample_marginal``
 dispatch in MatterGen's :class:`MultiCorruption` is not sufficient — we
 override it to handle velocity sampling and position wrapping.
 """
 
-from __future__ import annotations
+from torch import Tensor  # noqa: TC002
 
+from kldm_new.diffusion.tdm import KineticLangevinSDE  # noqa: TC001
 from mattergen.diffusion.corruption.multi_corruption import MultiCorruption
-from mattergen.diffusion.corruption.sde_lib import SDE
-from mattergen.diffusion.data.batched_data import BatchedData
-from torch import Tensor
-
-from kldm_new.diffusion.tdm import KineticLangevinSDE
+from mattergen.diffusion.corruption.sde_lib import SDE  # noqa: RUF100, TC001, TC002
+from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
 
 
 class KLDMMultiCorruption(MultiCorruption):
@@ -40,25 +38,30 @@ class KLDMMultiCorruption(MultiCorruption):
         self,
         pos_sde: KineticLangevinSDE,
         cell_sde: SDE,
-    ):
+    ) -> None:
+        """Initialize the multi-corruption with the given SDEs."""
         # Register cell SDE in the standard MatterGen dict
         super().__init__(sdes={"cell": cell_sde})
         self._pos_sde = pos_sde
 
     @property
     def pos_sde(self) -> KineticLangevinSDE:
+        """Accessor for the position SDE."""
         return self._pos_sde
 
     @property
     def cell_sde(self) -> SDE:
+        """Accessor for the cell SDE."""
         return self.sdes["cell"]
 
     @property
     def corrupted_fields(self) -> list[str]:
+        """Fields corrupted by this multi-corruption."""
         return ["pos", "vel", "cell"]
 
     @property
-    def T(self) -> float:  # type: ignore[override]
+    def T(self) -> float:  # type: ignore[override]  # noqa: N802
+        """Diffusion time horizon. Both SDEs must share the same T."""
         # Both SDEs must share the same T
         return self._pos_sde.T
 
@@ -87,8 +90,9 @@ class KLDMMultiCorruption(MultiCorruption):
         # -- Velocity: standard Gaussian marginal --
         vel_t = self._pos_sde.sample_marginal(vel_0, t, batch_idx=pos_batch_idx, batch=batch)
 
-        # -- Position: wrapped displacement marginal --
-        pos_t = self._pos_sde.sample_pos_marginal(pos_0, vel_0, t, batch_idx=pos_batch_idx)
+        # -- Position: wrapped displacement marginal/conditional --
+        # Position sampling depends on the mode
+        pos_t = self._pos_sde.sample_pos(pos_0, vel_0, vel_t, t, batch_idx=pos_batch_idx)
 
         # -- Cell: delegate to LatticeVPSDE --
         cell_t = self.cell_sde.sample_marginal(cell_0, t, batch_idx=None, batch=batch)

@@ -218,10 +218,49 @@ class Perov5(CrystalDatasetWrapper):
     }
 
 
+DEFAULT_DATA_ROOT = Path("data")
+
+DATASET_REGISTRY: dict[str, type[CrystalDatasetWrapper]] = {
+    "mp_20": MP20,
+    "carbon_24": Carbon24,
+    "mpts_52": MPTS52,
+    "perov_5": Perov5,
+}
+
+
+def resolve_data_root(root: str | Path | None = None) -> Path:
+    """Return a resolved ``Path`` for the data root directory.
+
+    Falls back to ``DEFAULT_DATA_ROOT`` when *root* is ``None``.
+    """
+    if root is None:
+        return DEFAULT_DATA_ROOT
+    return Path(root).expanduser()
+
+
+def get_dataset_class(name: str) -> type[CrystalDatasetWrapper]:
+    """Look up a dataset class by its short name (e.g. ``"mp_20"``)."""
+    try:
+        return DATASET_REGISTRY[name]
+    except KeyError:
+        msg = f"Unknown dataset {name!r}. Available: {sorted(DATASET_REGISTRY)}"
+        raise ValueError(msg) from None
+
+
 if __name__ == "__main__":
-    dataset = Perov5(
+    dataset = MP20(
         root="data",
         split="train",
+        download=True,  # Set to True to download the dataset if not present
+    )
+    dataset = MP20(
+        root="data",
+        split="val",
+        download=True,  # Set to True to download the dataset if not present
+    )
+    dataset = MP20(
+        root="data",
+        split="test",
         download=True,  # Set to True to download the dataset if not present
     )
     # print(dataset.data)  # noqa: ERA001

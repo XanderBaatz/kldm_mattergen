@@ -12,8 +12,6 @@ position and velocity are *coupled*, the predictor / corrector steps
 require custom implementations (see ``predictors.py`` / ``correctors.py``).
 """
 
-from __future__ import annotations
-
 import torch
 from torch import Tensor
 

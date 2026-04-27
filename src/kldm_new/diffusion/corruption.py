@@ -10,8 +10,6 @@ dispatch in MatterGen's :class:`MultiCorruption` is not sufficient — we
 override it to handle velocity sampling and position wrapping.
 """
 
-from __future__ import annotations
-
 from torch import Tensor  # noqa: TC002
 
 from kldm_new.diffusion.tdm import KineticLangevinSDE  # noqa: TC001

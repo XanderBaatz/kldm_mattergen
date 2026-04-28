@@ -6,7 +6,7 @@ description = "This repository contains configurations to set up a Python develo
 authors = [{ name = "a5chin", email = "a5chin.origin+contact@gmail.com" }]
 maintainers = [{ name = "a5chin", email = "a5chin.origin+contact@gmail.com" }]
 
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.13"
 readme = "README.md"
 license = "MIT"
 
@@ -25,11 +25,11 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
     "pymatgen>=2025.10.7",
-    "torch>=2.10.0",
-    "torch-cluster>=1.6.3",
-    "torch-geometric>=2.7.0",
-    "torch-scatter>=2.1.2",
-    "torch-sparse>=0.6.18",
+    "torch==2.2.2+cu121",
+    "torch-geometric==2.7.0",
+    "torch-scatter @ https://data.pyg.org/whl/torch-2.2.0+cu121/torch_scatter-2.1.2+pt22cu121-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux'",
+    "torch-sparse @ https://data.pyg.org/whl/torch-2.2.0+cu121/torch_sparse-0.6.18+pt22cu121-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux'",
+    "torch-cluster @ https://data.pyg.org/whl/torch-2.2.0+cu121/torch_cluster-1.6.3+pt22cu121-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux'",
     "wandb>=0.25.1",
 ]
 
@@ -52,14 +52,23 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["tools", "src/kldm_new"]
 
-[tool.uv.extra-build-dependencies]
-torch-scatter = ["torch"]
-torch-sparse = ["torch"]
-torch-cluster = ["torch"]
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.uv]
 dependency-metadata = [{ name = "mattergen", version = "1.0.3" }]
+index-strategy = "unsafe-best-match"
+environments = ["sys_platform == 'linux'"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"

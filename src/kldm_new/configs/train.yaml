@@ -4,7 +4,9 @@
 # Usage:
 #   python -m kldm_new.scripts.train                          # defaults (MP-20)
 #   python -m kldm_new.scripts.train trainer=gpu              # GPU trainer
-#   python -m kldm_new.scripts.train data=mp_20               # explicit dataset
+#   python -m kldm_new.scripts.train data=carbon_24           # switch dataset
+#   python -m kldm_new.scripts.train data=mpts_52             # switch dataset
+#   python -m kldm_new.scripts.train data=perov_5             # switch dataset
 #   python -m kldm_new.scripts.train experiment=debug        # quick debug
 #   python -m kldm_new.scripts.train logger=csv               # CSV only
 # --------------------------------------------------------------------------- #
@@ -25,7 +27,9 @@ defaults:
 # --------------------------------------------------------------------------- #
 seed: 42
 project: "kldm_new"
-tags: [ mp_20, csp ]
+tags:
+  - ${data.dataset_name}
+  - csp
 
 train: true
 test: false

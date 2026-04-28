@@ -73,4 +73,4 @@ COPY --from=builder /app/tools /app/tools
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "-m", "kldm_new.scripts.train"]
+ENTRYPOINT ["python", "-m", "kldm_new.scripts.train", "experiment=debug"]

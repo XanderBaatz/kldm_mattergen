@@ -1,6 +1,6 @@
 _target_: kldm_new.scripts._datamodule.KLDMNewDataModule
-data_path: ${paths.data_root}/mp_20/processed
-dataset_name: mp_20
+data_path: ${paths.data_root}/carbon_24/processed
+dataset_name: carbon_24
 auto_prepare: true
 train_batch_size: 256
 val_batch_size: 256

@@ -13,6 +13,8 @@ from mattergen.common.data.dataset import CrystalDataset
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
+from kldm_new.data.prepare import ensure_preprocessed_dataset, infer_dataset_name_from_processed_path
+
 
 class KLDMNewDataModule(LightningDataModule):
     """Thin wrapper around MatterGen's ``CrystalDataset`` with standard DataLoaders.
@@ -34,6 +36,8 @@ class KLDMNewDataModule(LightningDataModule):
     def __init__(
         self,
         data_path: str | Path,
+        dataset_name: str | None = None,
+        auto_prepare: bool = True,
         train_batch_size: int = 256,
         val_batch_size: int = 256,
         test_batch_size: int = 256,
@@ -45,14 +49,35 @@ class KLDMNewDataModule(LightningDataModule):
         # Resolve relative to original cwd (Hydra changes cwd before instantiation)
         p = Path(data_path)
         if not p.is_absolute():
-            p = Path(hydra.utils.get_original_cwd()) / p
+            try:
+                original_cwd = Path(hydra.utils.get_original_cwd())
+            except ValueError:
+                original_cwd = Path.cwd()
+            p = original_cwd / p
         self.data_path = p.resolve()
+        self.dataset_name = dataset_name or infer_dataset_name_from_processed_path(self.data_path)
+        self.auto_prepare = auto_prepare
 
     # ------------------------------------------------------------------
 
     def setup(self, stage: str | None = None) -> None:
         """Load datasets from cache. Called on every process in DDP."""
         data_path = self.data_path
+        required_splits: tuple[str, ...]
+        if stage in (None, "fit"):
+            required_splits = ("train", "val")
+        elif stage == "test" or stage == "predict":
+            required_splits = ("test",)
+        else:
+            required_splits = tuple()
+
+        if self.auto_prepare and required_splits:
+            ensure_preprocessed_dataset(
+                data_path=data_path,
+                dataset_name=self.dataset_name,
+                splits=required_splits,
+            )
+
         if stage in (None, "fit"):
             self.train_dataset = CrystalDataset.from_cache_path(str(data_path / "train"))
             self.val_dataset = CrystalDataset.from_cache_path(str(data_path / "val"))

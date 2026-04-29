@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 
 import torch
+from mattergen.diffusion.timestep_samplers import UniformTimestepSampler
 from pymatgen.core import Lattice, Structure
 from pytorch_lightning import LightningModule
 from torch import Tensor
@@ -13,6 +14,7 @@ from kldm_new.data import add_velocity
 from kldm_new.diffusion.corruption import KLDMMultiCorruption  # noqa: TC001
 from kldm_new.diffusion.loss import KLDMLoss
 from kldm_new.diffusion.sampling import KLDMSampler
+from kldm_new.diffusion.timestep_samplers import TimestepSampler
 from kldm_new.model import KLDMScoreModel  # noqa: TC001
 
 
@@ -39,6 +41,10 @@ class LitKLDM(LightningModule):
         Number of reverse-time steps for sampling.
     sampling_corrector_steps : int
         Number of Langevin corrector steps per predictor step.
+    timestep_sampler : TimestepSampler, optional
+        Sampler for training timesteps.  Defaults to
+        :class:`~kldm_new.diffusion.timestep_samplers.UniformTimestepSampler`
+        with ``t_max = cell_sde.T``.
 
     """
 
@@ -53,6 +59,7 @@ class LitKLDM(LightningModule):
         ema_start: int = 100,
         sampling_N: int = 1000,
         sampling_corrector_steps: int = 1,
+        timestep_sampler: TimestepSampler | None = None,
     ) -> None:
         super().__init__()
         self.score_model = score_model
@@ -67,7 +74,13 @@ class LitKLDM(LightningModule):
         else:
             self.ema_model = None
 
-        self.save_hyperparameters(ignore=["score_model", "multi_corruption", "loss_fn"])
+        # Default to uniform over [1e-3, cell_sde.T]; cell_sde.T is the
+        # tighter bound (1.0 vs pos_sde.T=2.0) so we use it as max_t.
+        if timestep_sampler is None:
+            timestep_sampler = UniformTimestepSampler(min_t=1e-3, max_t=multi_corruption.cell_sde.T)
+        self.timestep_sampler = timestep_sampler
+
+        self.save_hyperparameters(ignore=["score_model", "multi_corruption", "loss_fn", "timestep_sampler"])
 
     # ---- Training ---------------------------------------------------------
 
@@ -92,11 +105,11 @@ class LitKLDM(LightningModule):
             score_model_output=score_out,
             t=t,
         )
-        return total_loss, loss_dict
+        return total_loss, loss_dict, batch_size
 
     def training_step(self, batch, batch_idx):
-        loss, loss_dict = self._basic_step(batch)
-        self.log_dict({f"train/{k}": v for k, v in loss_dict.items()})
+        loss, loss_dict, batch_size = self._basic_step(batch)
+        self.log_dict({f"train/{k}": v for k, v in loss_dict.items()}, batch_size=batch_size)
         return loss
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
@@ -104,7 +117,9 @@ class LitKLDM(LightningModule):
             self.ema_model.update_parameters(self.score_model)
 
     def validation_step(self, batch, batch_idx):
-        loss, loss_dict = self._basic_step(batch)
+        loss, loss_dict, batch_size = self._basic_step(batch)
+        self.log_dict({f"val/{k}": v for k, v in loss_dict.items()}, on_epoch=True, batch_size=batch_size)
+        return loss
         self.log_dict({f"val/{k}": v for k, v in loss_dict.items()}, on_epoch=True)
         return loss
 
@@ -152,10 +167,13 @@ class LitKLDM(LightningModule):
     # ---- Helpers ----------------------------------------------------------
 
     def _sample_t(self, batch_size: int) -> Tensor:
-        """Sample uniform t ∈ (ε, T]."""
-        T = self.multi_corruption.T
-        eps = 1e-3
-        return (eps - T) * torch.rand(batch_size, 1, device=self.device) + T
+        """Sample diffusion timesteps via the configured :attr:`timestep_sampler`.
+
+        Ensures shape ``(batch_size, 1)`` for broadcasting against per-atom SDE
+        fields, regardless of whether the sampler returns ``(B,)`` or ``(B, 1)``.
+        """
+        t = self.timestep_sampler(batch_size, self.device)
+        return t.view(batch_size, 1)
 
     def _get_model(self, ema: bool = False) -> KLDMScoreModel:  # noqa: FBT001, FBT002
         if self.ema_model and (ema or self.current_epoch > self.hparams.ema_start):

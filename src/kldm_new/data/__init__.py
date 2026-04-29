@@ -1,11 +1,15 @@
-"""Data transforms for KLDM — add velocity and build edges on ChemGraph batches."""
+"""Data transforms for KLDM - add velocity and build edges on ChemGraph batches."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
-from mattergen.diffusion.data.batched_data import BatchedData
-from torch import Tensor
-from torch_scatter import scatter_mean
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.data.batched_data import BatchedData
+
+from kldm_new.data.prepare import DATASET_SPECS, ensure_preprocessed_dataset
 
 
 def add_velocity(batch: BatchedData) -> BatchedData:
@@ -25,3 +29,6 @@ def add_velocity(batch: BatchedData) -> BatchedData:
     pos = batch["pos"]
     vel = torch.zeros_like(pos)
     return batch.replace(vel=vel)
+
+
+__all__ = ["DATASET_SPECS", "add_velocity", "ensure_preprocessed_dataset"]

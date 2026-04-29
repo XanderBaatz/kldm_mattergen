@@ -3,6 +3,8 @@ from mattergen.diffusion.corruption.corruption import B, maybe_expand
 from mattergen.diffusion.corruption.sde_lib import VESDE, VPSDE, BaseVPSDE
 from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
 
+from kldm_new.diffusion.schedule import LinearSchedule, NoiseSchedule
+
 __all__ = ["VESDE", "VPSDE", "SubVPSDE"]
 
 
@@ -10,21 +12,36 @@ class SubVPSDE(BaseVPSDE):
     """Sub Variance Preserving SDE. See equation (12) of Song et al.
 
     The drift is identical to VP, but the diffusion is scaled to keep the variance strictly lower than the VP SDE.
+
+    Parameters
+    ----------
+    schedule:
+        Noise schedule that provides ``beta(t)`` and ``mean_coeff(t)``.
+        Defaults to a :class:`~kldm_new.diffusion.schedule.LinearSchedule`.
+    beta_min, beta_max:
+        Used only when ``schedule=None`` to construct the default
+        :class:`~kldm_new.diffusion.schedule.LinearSchedule`.
+
     """
 
-    def __init__(self, beta_min: float = 0.1, beta_max: float = 20) -> None:
-        """Sub variance-preserving SDE with drift coefficient changing linearly over time."""
+    def __init__(
+        self,
+        schedule: NoiseSchedule | None = None,
+        beta_min: float = 0.1,
+        beta_max: float = 20,
+    ) -> None:
+        """Sub variance-preserving SDE with a pluggable noise schedule."""
         super().__init__()
-        self.beta_0 = beta_min
-        self.beta_1 = beta_max
+        if schedule is None:
+            schedule = LinearSchedule(beta_min=beta_min, beta_max=beta_max)
+        self.schedule = schedule
 
     def beta(self, t: torch.Tensor) -> torch.Tensor:
-        """Linear beta scheduler."""
-        return self.beta_0 + t * (self.beta_1 - self.beta_0)
+        """Instantaneous noise rate β(t) delegated to the schedule."""
+        return self.schedule.beta(t)
 
     def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:  # alpha
-        log_mean_coeff = -0.25 * t**2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
-        return torch.exp(log_mean_coeff)
+        return self.schedule.mean_coeff(t)
 
     def sde(
         self,

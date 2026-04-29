@@ -10,8 +10,8 @@ def d_log_p_wrapped_normal(
     x: Tensor,
     mu: Tensor,
     sigma: Tensor,
-    N: int = 10,
-    T: float = 1.0,
+    N: int = 10,  # noqa: N803
+    T: float = 1.0,  # noqa: N803
 ) -> Tensor:
     """Score (∇_x log p) of a wrapped normal distribution.
 
@@ -47,7 +47,9 @@ def d_log_p_wrapped_normal(
     # ∂/∂x log Σ_n exp(log_p_n) = Σ_n [exp(log_p_n) * (∂ log_p_n / ∂x)] / Σ_n exp(log_p_n)
     #   = Σ_n softmax_n * (-(x - mu - nT) / sigma²)
     weights = torch.softmax(log_ps, dim=0)  # (2N+1, *x.shape)
-    grad_per_image = -shifted / var.unsqueeze(0)
+    # Clamp var to avoid 0/0 when sigma→0 and shifted→0 (n=0 image at mode).
+    # The correct limit is score→0 there, and clamping gives -0/eps = 0.
+    grad_per_image = -shifted / var.unsqueeze(0).clamp(min=1e-12)
     score = (weights * grad_per_image).sum(dim=0)
     return score
 
@@ -56,7 +58,7 @@ def sigma_norm(
     sigma: Tensor,
     T: float = 1.0,
     N: int = 10,
-    sn: int = 20_000,
+    sn: int = 2_000,
 ) -> Tensor:
     r"""Expected squared L2-norm of the wrapped-normal score (per dimension).
 
@@ -75,7 +77,7 @@ def sigma_norm(
     Returns:
         Tensor of the same shape as *sigma*.
 
-    """
+    """  # noqa: D401
     original_shape = sigma.shape
     sigma_flat = sigma.reshape(-1)  # (K,)
 
@@ -120,5 +122,4 @@ class DistributionGaussian:
         from torch_scatter import scatter_mean
 
         means = scatter_mean(z, batch_idx, dim=0)
-        z = z - means[batch_idx]
-        return z
+        return z - means[batch_idx]

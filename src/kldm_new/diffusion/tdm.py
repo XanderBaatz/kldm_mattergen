@@ -13,11 +13,11 @@ require custom implementations (see ``predictors.py`` / ``correctors.py``).
 """
 
 import torch
+from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
+from mattergen.diffusion.corruption.sde_lib import SDE
 from torch import Tensor
 
 from kldm_new.diffusion import d_log_p_wrapped_normal, sigma_norm
-from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
-from mattergen.diffusion.corruption.sde_lib import SDE
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,13 +253,20 @@ class KineticLangevinSDE(SDE):
     # ---- Training target --------------------------------------------------
 
     def _prefactor_t(self, t_exp: Tensor) -> Tensor:
-        """(1-exp(-γt))/(1+exp(-γt)) prefactor, generalized to arbitrary γ.
+        r"""Prefactor :math:`\frac{1-e^{-\gamma t}}{\gamma(1+e^{-\gamma t})}`.
 
-        At γ=1 this matches the original TDM's _prefactor_t.
-        Used inside training_target for simplified parameterization.
-        """  # noqa: RUF002
+        This is :math:`\partial\mu_r / \partial\mathbf{v}_t` in the conditional
+        displacement mean (Corollary of Lemma — general :math:`\gamma`):
+
+        .. math::
+            \mu_{r|v}(t) = \frac{1-e^{-\gamma t}}{\gamma(1+e^{-\gamma t})}
+                           (\mathbf{v}_t + \mathbf{v}_0)
+
+        At :math:`\gamma=1` this reduces to the original TDM expression
+        :math:`(1-e^{-t}) / (1+e^{-t})`.
+        """
         exp_gt = torch.exp(-self.gamma * t_exp)
-        return (1.0 - exp_gt) / (1.0 + exp_gt).clamp(min=1e-8)
+        return (1.0 - exp_gt) / (self.gamma * (1.0 + exp_gt).clamp(min=1e-8))
 
     def training_target(  # noqa: PLR0913
         self,
@@ -313,7 +320,15 @@ class KineticLangevinSDE(SDE):
         target = prefactor * score_wn
 
         if self.simplified_parameterization:
-            sn = sigma_norm(sigma_r, T=self.scale_pos, N=self.k_wn_score)
+            # sigma_r has shape (N_atoms, 3) but sigma only depends on t
+            # (one per structure), so there are at most batch_size unique values.
+            # Computing sigma_norm over all N_atoms*3 entries creates a tensor
+            # of shape (2N+1, sn, N_atoms*3) that easily OOMs on GPU.
+            # Instead, de-duplicate → compute on unique vals → broadcast back.
+            sigma_flat = sigma_r.reshape(-1)
+            sigma_unique, inv_idx = torch.unique(sigma_flat, return_inverse=True)
+            sn_unique = sigma_norm(sigma_unique, T=self.scale_pos, N=self.k_wn_score)
+            sn = sn_unique[inv_idx].reshape(sigma_r.shape)
             target = target / torch.sqrt(sn.clamp(min=1e-8))
 
         return target

@@ -33,9 +33,7 @@ class LatticeSubVPSDE(SubVPSDE):
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         """Initialize the LatticeSubVPSDE with specified parameters for the SDE and limit distribution."""
-        super().__init__()
-        self.beta_0 = beta_min
-        self.beta_1 = beta_max
+        super().__init__(beta_min=beta_min, beta_max=beta_max)
 
         self.limit_density = limit_density
         self.limit_var_scaling_constant = limit_var_scaling_constant
@@ -49,14 +47,6 @@ class LatticeSubVPSDE(SubVPSDE):
         Should be a per-graph scalar, e.g. number of atoms, that can be used to compute the mean and variance of the limit distribution.
         """
         return self._limit_info_key
-
-    def beta(self, t: torch.Tensor) -> torch.Tensor:
-        """Linear beta scheduler."""
-        return self.beta_0 + t * (self.beta_1 - self.beta_0)
-
-    def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:  # alpha
-        log_mean_coeff = -0.25 * t**2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
-        return torch.exp(log_mean_coeff)
 
     def marginal_prob(
         self,

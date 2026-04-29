@@ -30,6 +30,19 @@ multi_corruption:
     conditional_velocity: true
   cell_sde:
     _target_: kldm_new.diffusion.lattice_sde.LatticeSubVPSDE
+    # beta_min / beta_max are forwarded to the default LinearSchedule.
+    # To use a different schedule, remove these and add:
+    #   schedule:
+    #     _target_: kldm_new.diffusion.schedule.CosineSchedule
+    #     T: 1.0
+    #     s: 0.008
+    # or:
+    #   schedule:
+    #     _target_: kldm_new.diffusion.schedule.SigmoidSchedule
+    #     beta_min: 0.1
+    #     beta_max: 20.0
+    #     start: -3.0
+    #     end: 3.0
     beta_min: 0.1
     beta_max: 20.0
     limit_density: 0.05
@@ -45,3 +58,12 @@ ema_decay: 0.999
 ema_start: 500
 sampling_N: 1000
 sampling_corrector_steps: 1
+# Swap for LogUniformTimestepSampler to over-sample small t.
+timestep_sampler:
+  _target_: mattergen.diffusion.timestep_samplers.UniformTimestepSampler
+  # max_t must not exceed cell_sde.T (1.0). pos_sde.T is 2.0 but the cell SDE
+  # saturates at t=1.0, giving no training signal for t>1.0 on the cell branch.
+  # Swap _target_ for kldm_new.diffusion.timestep_samplers.LogUniformTimestepSampler
+  # to over-sample small t.
+  min_t: 1e-3
+  max_t: 1.0

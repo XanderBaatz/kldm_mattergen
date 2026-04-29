@@ -81,6 +81,7 @@ class KineticLangevinSDE(SDE):
         simplified_parameterization: bool = True,  # noqa: FBT001, FBT002
         gamma: float = 1.0,
         conditional_velocity: bool = True,  # noqa: FBT001, FBT002
+        sigma_norm_table_size: int = 2000,
     ) -> None:
         """Initialize the KineticLangevinSDE."""
         super().__init__()
@@ -94,6 +95,21 @@ class KineticLangevinSDE(SDE):
         if gamma <= 0.0:  # else we have imaginary diffusion coefficients and the SDE is not well-defined
             msg = "gamma must be positive"
             raise ValueError(msg)
+
+        if simplified_parameterization:
+            # Precompute sigma_norm on a log-spaced grid using float64 for
+            # accuracy. Registered as buffers so they move to GPU automatically.
+            # At training time we interpolate instead of re-estimating via MC,
+            # which eliminates float32 rounding noise and per-step variance.
+            sigma_grid = torch.logspace(-6, 0, sigma_norm_table_size, dtype=torch.float64)
+            sn_grid = sigma_norm(
+                sigma_grid,
+                T=scale_pos,
+                N=k_wn_score,
+                sn=50_000,  # high-accuracy precomputation, done once
+            ).float()
+            self.register_buffer("_sn_log_sigma", sigma_grid.log().float())
+            self.register_buffer("_sn_values", sn_grid)
 
     # ---- MatterGen SDE interface ------------------------------------------
 
@@ -268,6 +284,30 @@ class KineticLangevinSDE(SDE):
         exp_gt = torch.exp(-self.gamma * t_exp)
         return (1.0 - exp_gt) / (self.gamma * (1.0 + exp_gt).clamp(min=1e-8))
 
+    def _lookup_sigma_norm(self, sigma: Tensor) -> Tensor:
+        """Interpolate sigma_norm from the precomputed lookup table.
+
+        Uses linear interpolation in log-sigma space, which is accurate
+        because sigma_norm is smooth and monotone.  Values outside the
+        table range are clamped to the nearest endpoint.
+
+        Args:
+            sigma: 1-D tensor of sigma values (all positive).
+
+        Returns:
+            Tensor of the same shape with sigma_norm estimates.
+
+        """
+        log_sigma = sigma.clamp(min=1e-7).log()
+        # searchsorted returns insertion index in sorted array
+        idx = torch.searchsorted(self._sn_log_sigma, log_sigma).clamp(1, len(self._sn_log_sigma) - 1)
+        lo, hi = idx - 1, idx
+        log_s_lo = self._sn_log_sigma[lo]
+        log_s_hi = self._sn_log_sigma[hi]
+        # Linear interpolation weight in log-sigma space
+        w = ((log_sigma - log_s_lo) / (log_s_hi - log_s_lo).clamp(min=1e-12)).clamp(0.0, 1.0)
+        return self._sn_values[lo] * (1.0 - w) + self._sn_values[hi] * w
+
     def training_target(  # noqa: PLR0913
         self,
         pos_0: Tensor,
@@ -324,10 +364,10 @@ class KineticLangevinSDE(SDE):
             # (one per structure), so there are at most batch_size unique values.
             # Computing sigma_norm over all N_atoms*3 entries creates a tensor
             # of shape (2N+1, sn, N_atoms*3) that easily OOMs on GPU.
-            # Instead, de-duplicate → compute on unique vals → broadcast back.
+            # Instead, de-duplicate → lookup from precomputed table → broadcast back.
             sigma_flat = sigma_r.reshape(-1)
             sigma_unique, inv_idx = torch.unique(sigma_flat, return_inverse=True)
-            sn_unique = sigma_norm(sigma_unique, T=self.scale_pos, N=self.k_wn_score)
+            sn_unique = self._lookup_sigma_norm(sigma_unique)
             sn = sn_unique[inv_idx].reshape(sigma_r.shape)
             target = target / torch.sqrt(sn.clamp(min=1e-8))
 

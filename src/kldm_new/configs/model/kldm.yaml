@@ -46,6 +46,7 @@ multi_corruption:
     beta_min: 0.1
     beta_max: 20.0
     limit_density: 0.05
+    limit_var_scaling_constant: 0.25
 
 loss_fn:
   _target_: kldm_new.diffusion.loss.KLDMLoss

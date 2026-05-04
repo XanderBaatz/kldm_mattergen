@@ -51,7 +51,7 @@ class KineticLangevinSDE(SDE):
 
     At time *t* the **marginal** distributions are:
 
-    * ``v_t | v_0 ~ N(exp(-t) v_0, (1-exp(-2t)) I)``
+    * ``v_t | v_0 ~ N(exp(-γt) v_0, (1 - exp(-2γt)) I)``
     * ``r_t | v_0 ~ N(mu_r(v_0, t), sigma_r(t)² I)``   (see code for mu_r, sigma_r)
     * ``pos_t = wrap(pos_0 + wrap(r_t))``  where ``wrap`` is mod *scale_pos*.
 
@@ -193,12 +193,22 @@ class KineticLangevinSDE(SDE):
             # Conditional
             mu_r = ((1.0 - exp_gt) / (gamma * (1.0 + exp_gt))) * (v0 + vt)
 
-            sigma_r_sq = (2.0 / gamma**2) * (gamma * t_exp + (4.0 * gamma) / (torch.exp(gamma * t_exp) + 1.0) - 2.0 * gamma)
+            # Numerically stable form using tanh identity:
+            #   t + 4/(e^t+1) - 2  ≡  t - 2·tanh(t/2)
+            # The naive form suffers catastrophic cancellation in float32 at
+            # small t (e.g. t=0.01 gives sigma_r_sq=0 instead of ~1e-7),
+            # producing score targets 10,000× too large on GPU.
+            y = gamma * t_exp
+            sigma_r_sq = (2.0 / gamma**2) * (y - 2.0 * torch.tanh(y / 2.0))
         else:
             # Marginal
             mu_r = ((1.0 - exp_gt) / gamma) * v0
 
-            sigma_r_sq = (2.0 / gamma**2) * (gamma * t_exp - 2.0 * (1.0 - exp_gt) + 0.5 * (1.0 - torch.exp(-2.0 * gamma * t_exp)))
+            # Numerically stable form using expm1 identity:
+            #   t - 2(1-e^{-t}) + ½(1-e^{-2t})  ≡  t + 2·expm1(-t) - ½·expm1(-2t)
+            # expm1 is accurate at small arguments where direct subtraction cancels.
+            y = gamma * t_exp
+            sigma_r_sq = (2.0 / gamma**2) * (y + 2.0 * torch.expm1(-y) - 0.5 * torch.expm1(-2.0 * y))
 
         sigma_r = torch.sqrt(torch.clamp(sigma_r_sq, min=1e-12))
 

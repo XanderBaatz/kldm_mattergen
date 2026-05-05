@@ -151,6 +151,7 @@ class LitKLDM(LightningModule):
         sampler = KLDMSampler(
             multi_corruption=self.multi_corruption,
             score_fn=lambda b, t: model(b, t),
+            loss_fn=self.loss_fn,
             N=N or self.hparams.sampling_N,
             n_corrector_steps=n_corrector_steps or self.hparams.sampling_corrector_steps,
         )

@@ -13,11 +13,25 @@ def d_log_p_wrapped_normal(
     N: int = 10,  # noqa: N803
     T: float = 1.0,  # noqa: N803
 ) -> Tensor:
-    """Score (∇_x log p) of a wrapped normal distribution.
+    r"""Derivative of log WN w.r.t. the **mean** (:math:`\partial_\mu \log p`).
 
-    Computes the derivative of the log-probability of a wrapped normal
-    distribution over the interval [0, T) by summing periodic images
-    from -N to N.
+    This returns the quantity needed for the KLDM velocity score.  By the
+    chain rule through :math:`\mu_r(v_t)`:
+
+    .. math::
+        \nabla_{v_t} \log p(r_t \mid v_t, v_0)
+          = \underbrace{\frac{\partial \mu_r}{\partial v_t}}_{\text{prefactor}}
+            \cdot \underbrace{\frac{\partial \log \mathrm{WN}}{\partial \mu_r}}_{\text{this function}}
+
+    Because :math:`\partial_\mu \log \mathrm{WN} = -\partial_r \log \mathrm{WN}`,
+    this is the **negative** of the standard position-space score.
+
+    Concretely:
+
+    .. math::
+        \frac{\partial \log p(x \mid \mu, \sigma^2)}{\partial \mu}
+          = \sum_n w_n \frac{x - \mu + nT}{\sigma^2}, \quad
+          w_n = \operatorname{softmax}_n\!\left(-\frac{(x-\mu+nT)^2}{2\sigma^2}\right)
 
     Args:
         x: Sample positions, arbitrary shape.
@@ -27,31 +41,24 @@ def d_log_p_wrapped_normal(
         T: Period of the torus (default 1.0 → fractional coords).
 
     Returns:
-        Score tensor with the same shape as *x*.
+        :math:`\partial_\mu \log p` tensor, same shape as *x*.
 
     """
-    # sigma² and inverse
     var = sigma**2
-    # Broadcast over image index: shape = (2N+1, *x.shape)
     ns = torch.arange(-N, N + 1, device=x.device, dtype=x.dtype)
     for _ in range(x.ndim):
         ns = ns.unsqueeze(-1)
 
-    # Shifted x for each periodic image
+    # shifted[n] = x - mu - n*T.  Relabelling n → -n shows that summing
+    # w_n * shifted_n / σ² over n ∈ [-N,N] is identical to summing
+    # w_i * (x-mu+iT) / σ² over i ∈ [-N,N], i.e. ∂_μ log WN.
     shifted = x.unsqueeze(0) - mu.unsqueeze(0) - ns * T  # (2N+1, *x.shape)
-    log_ps = -0.5 * shifted**2 / var.unsqueeze(0)  # un-normalised log-prob
+    log_ps = -0.5 * shifted**2 / var.unsqueeze(0)
 
-    # Log-sum-exp for numerical stability
-    log_norm = torch.logsumexp(log_ps, dim=0)  # (*x.shape)
-
-    # ∂/∂x log Σ_n exp(log_p_n) = Σ_n [exp(log_p_n) * (∂ log_p_n / ∂x)] / Σ_n exp(log_p_n)
-    #   = Σ_n softmax_n * (-(x - mu - nT) / sigma²)
-    weights = torch.softmax(log_ps, dim=0)  # (2N+1, *x.shape)
-    # Clamp var to avoid 0/0 when sigma→0 and shifted→0 (n=0 image at mode).
-    # The correct limit is score→0 there, and clamping gives -0/eps = 0.
-    grad_per_image = -shifted / var.unsqueeze(0).clamp(min=1e-12)
-    score = (weights * grad_per_image).sum(dim=0)
-    return score
+    weights = torch.softmax(log_ps, dim=0)
+    # Clamp var to avoid 0/0 when sigma→0 and shifted→0 (limit is 0).
+    grad_per_image = shifted / var.unsqueeze(0).clamp(min=1e-12)
+    return (weights * grad_per_image).sum(dim=0)
 
 
 def sigma_norm(
@@ -59,6 +66,7 @@ def sigma_norm(
     T: float = 1.0,
     N: int = 10,
     sn: int = 2_000,
+    chunk_size: int = 100,
 ) -> Tensor:
     r"""Expected squared L2-norm of the wrapped-normal score (per dimension).
 
@@ -68,11 +76,17 @@ def sigma_norm(
 
     Estimated via Monte-Carlo with *sn* samples.
 
+    The grid of sigma values is processed in chunks of *chunk_size* to bound
+    peak memory.  Inside ``d_log_p_wrapped_normal`` an intermediate tensor of
+    shape ``(2N+1, sn, chunk_size)`` is allocated; with the default values
+    this stays well under 1 GB per chunk.
+
     Args:
         sigma: Scalar or 1-D tensor of standard deviations.
         T: Period.
         N: Number of periodic images.
         sn: Number of Monte-Carlo samples.
+        chunk_size: Number of sigma values processed per chunk.
 
     Returns:
         Tensor of the same shape as *sigma*.
@@ -80,17 +94,22 @@ def sigma_norm(
     """  # noqa: D401
     original_shape = sigma.shape
     sigma_flat = sigma.reshape(-1)  # (K,)
+    K = sigma_flat.shape[0]  # noqa: N806
 
-    # Sample from wrapped normal: x = wrap(mu + sigma * eps), mu=0
-    eps = torch.randn(sn, sigma_flat.shape[0], device=sigma.device)
-    x = torch.remainder(sigma_flat.unsqueeze(0) * eps, T)  # (sn, K)
+    sn_values = torch.empty(K, dtype=sigma.dtype, device=sigma.device)
 
-    mu = torch.zeros_like(sigma_flat).unsqueeze(0).expand(sn, -1)
-    sigma_expanded = sigma_flat.unsqueeze(0).expand(sn, -1)
+    for start in range(0, K, chunk_size):
+        end = min(start + chunk_size, K)
+        s_chunk = sigma_flat[start:end]  # (C,)
 
-    scores = d_log_p_wrapped_normal(x, mu, sigma_expanded, N=N, T=T)
-    # E[||score||^2] ≈ mean over samples
-    sn_values = (scores**2).mean(dim=0)  # (K,)
+        eps = torch.randn(sn, end - start, device=sigma.device, dtype=sigma.dtype)
+        x = torch.remainder(s_chunk.unsqueeze(0) * eps, T)  # (sn, C)
+        mu = torch.zeros_like(x)
+        s_exp = s_chunk.unsqueeze(0).expand(sn, -1)
+
+        scores = d_log_p_wrapped_normal(x, mu, s_exp, N=N, T=T)  # (sn, C)
+        sn_values[start:end] = (scores**2).mean(dim=0)
+
     return sn_values.reshape(original_shape)
 
 

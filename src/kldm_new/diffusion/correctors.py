@@ -4,6 +4,9 @@ Provides:
 
 * :class:`TDMLangevinCorrector` — adaptive Langevin corrector on *velocity*
   for the kinetic-Langevin process.
+
+The corrector mathematics is self-contained; no delegation to
+:class:`~kldm_new.diffusion.tdm.KineticLangevinSDE` is required.
 """
 
 from __future__ import annotations
@@ -17,21 +20,27 @@ from kldm_new.diffusion.tdm import KineticLangevinSDE
 
 
 class TDMLangevinCorrector:
-    """Adaptive Langevin corrector on velocity for TDM.
+    r"""Adaptive Langevin corrector on **velocity** for TDM.
 
-    At each corrector step, the velocity is updated via:
+    At each corrector step the velocity is updated via:
 
     .. math::
-        v \\leftarrow v + \\delta \\cdot \\text{score} + \\sqrt{2\\delta} \\cdot z
+        v \\leftarrow v + \\delta\\,s_\\theta + \\sqrt{2\\delta}\\,z,
+        \\qquad z \\sim \\mathcal{N}(0,I)
 
-    where ``delta = tau / mean(||score||^2)`` is an adaptive step size.
+    where the adaptive step size is:
+
+    .. math::
+        \\delta = \\frac{\\tau}{\\mathbb{E}[\\|s_\\theta\\|^2]}
+
+    Position is **not** updated during correction (only velocity is corrected).
 
     Parameters
     ----------
     corruption : KineticLangevinSDE
-        The kinetic Langevin SDE.
+        The kinetic Langevin SDE (used only for ``isinstance`` checks).
     score_fn : callable or None
-        Score function (unused — scores passed directly via ``step_given_score``).
+        Score function — unused here, kept for interface symmetry.
     n_steps : int
         Number of Langevin corrector steps per predictor step.
     tau : float
@@ -45,7 +54,8 @@ class TDMLangevinCorrector:
         score_fn=None,
         n_steps: int = 1,
         tau: float = 0.5,
-    ):
+    ) -> None:
+        """Initialise the Langevin corrector."""
         self.corruption = corruption
         self.score_fn = score_fn
         self.n_steps = n_steps
@@ -55,33 +65,31 @@ class TDMLangevinCorrector:
         self,
         *,
         x: Tensor,
-        batch_idx: B = None,
+        batch_idx: B = None,  # noqa: ARG002
         score: Tensor,
-        t: Tensor,
-        dt: float,
+        t: Tensor,  # noqa: ARG002
+        dt: float,  # noqa: ARG002
     ) -> SampleAndMean:
-        """Single Langevin corrector step on velocity.
+        """Single adaptive Langevin step on velocity.
 
         Args:
             x: Current velocity ``(N, 3)``.
-            batch_idx: Atom → graph mapping.
             score: Predicted score ``(N, 3)``.
-            t: Current diffusion time (unused, kept for interface compat).
-            dt: Time step (unused, kept for interface compat).
+            t: Current diffusion time (unused — step is score-only).
+            dt: Time step size (unused — step is score-only).
 
         Returns:
-            Updated velocity.
+            ``(v_new, v_mean)`` where ``v_mean`` is the deterministic part.
 
         """
-        v_new, _ = self.corruption.reverse_step_pc_corrector(
-            v=x,
-            pos=torch.zeros_like(x),  # position update done externally
-            score=score,
-            tau=self.tau,
-            batch_idx=batch_idx,
-        )
-        return (v_new, v_new)
+        score_norm_sq = (score**2).mean().clamp(min=1e-8)
+        delta = self.tau / score_norm_sq
+
+        v_mean = x + delta * score
+        noise = torch.randn_like(x)
+        v_new = v_mean + (2.0 * delta).sqrt() * noise
+        return v_new, v_mean
 
     @classmethod
-    def is_compatible(cls, corruption) -> bool:
+    def is_compatible(cls, corruption: object) -> bool:  # noqa: D102
         return isinstance(corruption, KineticLangevinSDE)

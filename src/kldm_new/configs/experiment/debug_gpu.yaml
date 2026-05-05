@@ -1,0 +1,33 @@
+# @package _global_
+#
+# GPU debug config — like `debug` but runs on GPU with anomaly detection.
+# Use this on HPC to pinpoint the first NaN-producing operation.
+# NOTE: detect_anomaly is slow (~3-5x); kill after the first NaN traceback.
+# Usage:  python -m kldm_new.scripts.train experiment=debug_gpu
+
+defaults:
+  - override /callbacks: none
+  - override /logger: csv
+
+seed: 0
+train: true
+test: false
+
+hidden_dim: 32
+time_dim: 32
+num_layers: 2
+num_freqs: 5
+
+val_every_n_epochs: 2
+
+data:
+  train_batch_size: 8
+  val_batch_size: 8
+
+model:
+  with_ema: false
+
+trainer:
+  max_epochs: 2
+  detect_anomaly: true
+  benchmark: false # must be false when detect_anomaly is true

@@ -99,6 +99,7 @@ class CSPVCellLayer(nn.Module):
             dim=0,
             reduce="mean",
             dim_size=node_features.shape[0],
+            fill_value=0.0,
         )
         return self.node_mlp(torch.cat([node_features, agg], dim=1))
 

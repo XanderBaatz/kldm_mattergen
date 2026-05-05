@@ -64,13 +64,38 @@ class LinearSchedule(VPNoiseSchedule):
     """
 
     def __init__(self, beta_min: float = 0.1, beta_max: float = 20.0) -> None:
+        """Initialize linear scheduler (default).
+
+        Args:
+            beta_min (float): minimum beta. Defaults to 0.1.
+            beta_max (float): maximum beta. Defaults to 20.0.
+
+        """
         self.beta_min = beta_min
         self.beta_max = beta_max
 
     def beta(self, t: torch.Tensor) -> torch.Tensor:
+        """Beta term.
+
+        Args:
+            t (Tensor): diffusion time.
+
+        Returns:
+            Tensor: beta term.
+
+        """
         return self.beta_min + t * (self.beta_max - self.beta_min)
 
     def _integral_beta(self, t: torch.Tensor) -> torch.Tensor:
+        """Analytical expression of linear integral beta ∫_0^t β(s) ds.
+
+        Args:
+            t (Tensor): diffusion time.
+
+        Returns:
+            Tensor: integral beta.
+
+        """
         return self.beta_min * t + 0.5 * (self.beta_max - self.beta_min) * t**2
 
 
@@ -90,7 +115,14 @@ class CosineSchedule(VPNoiseSchedule):
         \beta(t) = \frac{\pi}{T(1+s)}\,\tan\!\bigl(\varphi(t)\bigr)
     """
 
-    def __init__(self, T: float = 1.0, s: float = 0.008) -> None:
+    def __init__(self, T: float = 1.0, s: float = 0.008) -> None:  # noqa: N803
+        """Initialize cosine scheduler.
+
+        Args:
+            T (float): max timesteps. Defaults to 1.0.
+            s (float): offset. Defaults to 0.008.
+
+        """
         self.T = T
         self.s = s
         self._cos_phi0 = math.cos(s / (1.0 + s) * math.pi / 2)
@@ -106,6 +138,7 @@ class CosineSchedule(VPNoiseSchedule):
         return -2.0 * torch.log(self.mean_coeff(t).clamp(min=1e-8))
 
     def beta(self, t: torch.Tensor) -> torch.Tensor:
+        """Beta expression."""
         phi_prime = math.pi / (2.0 * self.T * (1.0 + self.s))
         return 2.0 * torch.tan(self._phi(t)) * phi_prime
 

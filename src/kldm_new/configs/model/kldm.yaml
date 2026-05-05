@@ -4,6 +4,7 @@ score_model:
   _target_: kldm_new.model.KLDMScoreModel
   cutoff: 0.5
   max_neighbors: 20
+  graph_mode: radius  # "radius" (scalable) or "full" (original kldm_frnct behaviour, O(N²))
   net:
     _target_: kldm_new.nn.arch.CSPVCellNet
     hidden_dim: ${hidden_dim}
@@ -24,10 +25,10 @@ multi_corruption:
     _target_: kldm_new.diffusion.tdm.KineticLangevinSDE
     scale_pos: 1.0
     tf: 2.0
-    k_wn_score: 13
-    simplified_parameterization: true
     gamma: 1.0
-    conditional_velocity: true
+    # KineticLangevinSDE is the forward process only.
+    # Training-target params (k_wn_score, simplified_parameterization)
+    # live on loss_fn below.
   cell_sde:
     _target_: kldm_new.diffusion.lattice_sde.LatticeSubVPSDE
     # beta_min / beta_max are forwarded to the default LinearSchedule.
@@ -46,11 +47,16 @@ multi_corruption:
     beta_min: 0.1
     beta_max: 20.0
     limit_density: 0.05
+    limit_var_scaling_constant: 0.25
 
 loss_fn:
   _target_: kldm_new.diffusion.loss.KLDMLoss
   weight_vel: ${loss_weights.vel}
   weight_cell: ${loss_weights.cell}
+  # simplified_parameterization: true
+  # k_wn_score: 13
+  # sigma_norm_table_size: 2000
+  # scale_pos: 1.0                   # must match pos_sde.scale_pos
 
 lr: 5e-4
 with_ema: true

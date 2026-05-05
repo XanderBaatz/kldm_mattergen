@@ -8,6 +8,7 @@ from mattergen.common.diffusion.corruption import (
 )
 from mattergen.diffusion.corruption.corruption import B, maybe_expand
 from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
+from kldm_new.diffusion.schedule import NoiseSchedule  # noqa: TC001
 
 from kldm_new.diffusion.sde import SubVPSDE
 
@@ -26,6 +27,7 @@ class LatticeSubVPSDE(SubVPSDE):
 
     def __init__(
         self,
+        schedule: NoiseSchedule | None = None,
         beta_min: float = 0.1,
         beta_max: float = 20.0,
         limit_density: float = 0.05,
@@ -33,7 +35,7 @@ class LatticeSubVPSDE(SubVPSDE):
         **kwargs,  # noqa: ANN003, ARG002
     ) -> None:
         """Initialize the LatticeSubVPSDE with specified parameters for the SDE and limit distribution."""
-        super().__init__(beta_min=beta_min, beta_max=beta_max)
+        super().__init__(schedule=schedule, beta_min=beta_min, beta_max=beta_max)
 
         self.limit_density = limit_density
         self.limit_var_scaling_constant = limit_var_scaling_constant

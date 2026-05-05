@@ -1,21 +1,23 @@
-"""KLDM multi-corruption: TDM for positions + VPSDE for lattice cell.
+"""KLDM multi-corruption: TDM for positions/velocities + VPSDE for lattice cell.
 
 This module provides :class:`KLDMMultiCorruption` which orchestrates
-the coupled kinetic-Langevin diffusion on fractional coordinates
-(via :class:`KineticLangevinSDE`) together with standard VP diffusion
-on the 3x3 lattice cell matrix (via :class:`LatticeVPSDE`).
+the coupled kinetic-Langevin **forward process** on fractional coordinates
+(via :class:`~kldm_new.diffusion.tdm.KineticLangevinSDE`) together with
+standard VP diffusion on the 3x3 lattice matrix (via  # noqa: RUF001
+:class:`~kldm_new.diffusion.lattice_sde.LatticeSubVPSDE`).
 
 Because TDM couples position and velocity, the standard ``sample_marginal``
-dispatch in MatterGen's :class:`MultiCorruption` is not sufficient — we
-override it to handle velocity sampling and position wrapping.
+dispatch in MatterGen's :class:`~mattergen.diffusion.corruption.multi_corruption.MultiCorruption`
+is not sufficient — we override it to handle the joint (vel, pos) forward
+corruption correctly using the conditional displacement marginal.
 """
 
-from torch import Tensor  # noqa: TC002
-
-from kldm_new.diffusion.tdm import KineticLangevinSDE  # noqa: TC001
 from mattergen.diffusion.corruption.multi_corruption import MultiCorruption
 from mattergen.diffusion.corruption.sde_lib import SDE  # noqa: RUF100, TC001, TC002
 from mattergen.diffusion.data.batched_data import BatchedData  # noqa: RUF100, TC001, TC002
+from torch import Tensor  # noqa: TC002
+
+from kldm_new.diffusion.tdm import KineticLangevinSDE  # noqa: TC001
 
 
 class KLDMMultiCorruption(MultiCorruption):
@@ -90,8 +92,8 @@ class KLDMMultiCorruption(MultiCorruption):
         # -- Velocity: standard Gaussian marginal --
         vel_t = self._pos_sde.sample_marginal(vel_0, t, batch_idx=pos_batch_idx, batch=batch)
 
-        # -- Position: wrapped displacement marginal/conditional --
-        # Position sampling depends on the mode
+        # -- Position: conditional displacement marginal r | v_0, v_t (Corollary) --
+        # Passing vel_t triggers the conditional form in KineticLangevinSDE.sample_pos.
         pos_t = self._pos_sde.sample_pos(pos_0, vel_0, vel_t, t, batch_idx=pos_batch_idx)
 
         # -- Cell: delegate to LatticeVPSDE --

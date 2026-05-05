@@ -10,4 +10,4 @@ gradient_clip_val: 5.0
 gradient_clip_algorithm: "norm"
 accumulate_grad_batches: 1
 deterministic: false
-benchmark: true
+benchmark: false  # variable-size batches (different atom counts) make benchmark unsafe

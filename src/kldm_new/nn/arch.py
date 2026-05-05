@@ -99,8 +99,9 @@ class CSPVCellLayer(nn.Module):
             dim=0,
             reduce="mean",
             dim_size=node_features.shape[0],
-            fill_value=0.0,
         )
+        # Isolated nodes (0 edges) produce NaN from 0/0 on some builds; replace with 0
+        agg = torch.nan_to_num(agg, nan=0.0)
         return self.node_mlp(torch.cat([node_features, agg], dim=1))
 
     def forward(  # noqa: PLR0913

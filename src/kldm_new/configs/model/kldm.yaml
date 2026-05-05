@@ -4,6 +4,7 @@ score_model:
   _target_: kldm_new.model.KLDMScoreModel
   cutoff: 0.5
   max_neighbors: 20
+  graph_mode: radius  # "radius" (scalable) or "full" (original kldm_frnct behaviour, O(N²))
   net:
     _target_: kldm_new.nn.arch.CSPVCellNet
     hidden_dim: ${hidden_dim}

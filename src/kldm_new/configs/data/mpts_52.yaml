@@ -2,6 +2,10 @@ _target_: kldm_new.scripts._datamodule.KLDMNewDataModule
 data_path: ${paths.data_root}/mpts_52/processed
 dataset_name: mpts_52
 auto_prepare: true
+transforms:
+  - _target_: kldm_new.data.transform.FullyConnectedGraph
+    key: edge_node_index
+    len_from: pos
 train_batch_size: 256
 val_batch_size: 256
 test_batch_size: 256

@@ -31,10 +31,6 @@ model:
   sampling_N: 10
   sampling_corrector_steps: 1
 
-  score_model:
-    cutoff: 0.5
-    max_neighbors: 12
-
 trainer:
   max_epochs: 5
   enable_progress_bar: true

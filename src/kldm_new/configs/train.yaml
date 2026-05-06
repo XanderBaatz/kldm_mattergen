@@ -39,7 +39,7 @@ ckpt_path: null
 hidden_dim: 512
 time_dim: 256
 num_layers: 6
-num_freqs: 128
+num_freqs: 64 # >64 risks float32 overflow in SinEmbedding (π·2^k overflows at k≥128)
 
 # Loss
 loss_weights:

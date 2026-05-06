@@ -44,7 +44,6 @@ def d_log_p_wrapped_normal(
         :math:`\partial_\mu \log p` tensor, same shape as *x*.
 
     """
-    var = sigma**2
     ns = torch.arange(-N, N + 1, device=x.device, dtype=x.dtype)
     for _ in range(x.ndim):
         ns = ns.unsqueeze(-1)
@@ -53,12 +52,17 @@ def d_log_p_wrapped_normal(
     # w_n * shifted_n / σ² over n ∈ [-N,N] is identical to summing
     # w_i * (x-mu+iT) / σ² over i ∈ [-N,N], i.e. ∂_μ log WN.
     shifted = x.unsqueeze(0) - mu.unsqueeze(0) - ns * T  # (2N+1, *x.shape)
+    # Clamp sigma² BEFORE any division — prevents 0/0 = NaN on GPU when
+    # sigma underflows to exactly 0 in float32 (unlike CPU which uses extended
+    # precision). Matches kldm_jonas's numerically stable reference impl.
+    var = sigma.square().clamp(min=1e-12)
     log_ps = -0.5 * shifted**2 / var.unsqueeze(0)
 
     weights = torch.softmax(log_ps, dim=0)
-    # Clamp var to avoid 0/0 when sigma→0 and shifted→0 (limit is 0).
-    grad_per_image = shifted / var.unsqueeze(0).clamp(min=1e-12)
-    return (weights * grad_per_image).sum(dim=0)
+    # Extra denominator clamp mirrors kldm_jonas: when ALL exp weights underflow
+    # to 0 (possible with very large logit gaps on GPU), prevent 0/0.
+    grad_per_image = shifted / var.unsqueeze(0)
+    return (weights * grad_per_image).sum(dim=0) / torch.sum(weights, dim=0).clamp(min=1e-12)
 
 
 def sigma_norm(

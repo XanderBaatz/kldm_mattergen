@@ -19,7 +19,11 @@ class SinEmbedding(nn.Module):
         super().__init__()
         self.n_frequencies = n_frequencies
         self._dim = 2 * n_frequencies
-        freqs = torch.pi * (2.0 ** torch.arange(n_frequencies, dtype=torch.float32))
+        # Compute in float64 to avoid overflow, then cast.
+        # π·2^k overflows float32 at k≥128 (π·2^127 ≈ 5.3e38 > float32_max).
+        # Clamp to float32 max so the buffer is always finite.
+        freqs = torch.pi * (2.0 ** torch.arange(n_frequencies, dtype=torch.float64))
+        freqs = freqs.clamp(max=torch.finfo(torch.float32).max).float()
         self.register_buffer("freqs", freqs)
 
     @property
@@ -35,9 +39,11 @@ class SinEmbedding(nn.Module):
             ``(..., 2 * n_frequencies)`` embedded tensor.
 
         """
-        # Compute norm for vector inputs, keep scalars as-is
+        # Compute norm for vector inputs, keep scalars as-is.
+        # Clamp before sqrt to avoid NaN gradient of norm at zero
+        # (which occurs when two atoms share the same fractional coordinate).
         if x.ndim >= 2 and x.shape[-1] > 1:
-            x = x.norm(dim=-1, keepdim=True)  # (..., 1)
+            x = x.pow(2).sum(dim=-1, keepdim=True).clamp(min=1e-16).sqrt()  # (..., 1)
         elif x.ndim == 1:
             x = x.unsqueeze(-1)  # (..., 1)
         # x: (..., 1) × freqs: (K,) → (..., K)

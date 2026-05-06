@@ -54,6 +54,7 @@ def section(title: str) -> None:
 def test_sigma_norm_table(device: torch.device) -> None:
     section("TEST 1: sigma_norm lookup table (KLDMLoss init)")
     from kldm_new.diffusion.loss import KLDMLoss
+    from kldm_new.diffusion.tdm import KineticLangevinSDE
 
     loss_fn = KLDMLoss().to(device)
     sn = loss_fn._sn_values
@@ -63,14 +64,105 @@ def test_sigma_norm_table(device: torch.device) -> None:
     chk("_sn_values", sn, warn_inf=True)
     chk("_sn_log_sigma", log_s, warn_inf=False)
 
-    # Check for zeros (zero sn → 1/sqrt(0) → Inf in target)
-    n_zero = (sn == 0).sum().item()
-    n_tiny = (sn < 1e-8).sum().item()
-    print(f"  {INFO} entries == 0: {n_zero}   entries < 1e-8: {n_tiny}")
-    if n_tiny > 0:
-        print(f"  {FAIL} small sn_values will cause target = score_wn / sqrt(~0) → huge or NaN")
+    # Small sn_values only cause issues if they fall inside the TRAINING sigma_rt range.
+    # sigma_rt_max occurs at t_max (= cell_sde.T = 1.0, gamma=1).
+    import math
+    gamma = 1.0
+    t_max = 1.0
+    sigma_rt_max = math.sqrt((2.0 / gamma**2) * (gamma * t_max - 2.0 * math.tanh(gamma * t_max / 2.0)))
+    log_sigma_rt_max = math.log(sigma_rt_max)
+    idx_in_training_range = (log_s <= log_sigma_rt_max)
+    sn_in_range = sn[idx_in_training_range]
+    n_tiny_in_range = (sn_in_range < 1e-8).sum().item()
+    print(f"  {INFO} sigma_rt_max at t=1.0: {sigma_rt_max:.4f}")
+    print(f"  {INFO} sn entries < 1e-8 in training range: {n_tiny_in_range}")
+    if n_tiny_in_range > 0:
+        print(f"  {FAIL} small sn_values inside training range → target = score_wn / sqrt(~0)")
     else:
-        print(f"  {PASS} all sn_values >= 1e-8")
+        print(f"  {PASS} all sn_values inside training range arert_max)
+    idx_in_training_range = log_s <= log_sigma_rt_max
+    sn_in_range = sn[idx_in_training_range]
+    n_tiny_in_range = (sn_in_range < 1e-8).sum().item()
+    pri1b – SinEmbedding frequency overflow (the actual root cause of NaN)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_sin_embedding_overflow(device: torch.device, num_freqs: int = 128) -> None:
+    """Check SinEmbedding for Inf frequencies and NaN output.
+
+    Root cause of training NaN: π·2^127 overflows float32 → freqs[-1]=Inf
+    → sin(Inf)=NaN → every edge feature is NaN → both vel and cell outputs NaN.
+    """
+    section(f"TEST 1b: SinEmbedding overflow (num_freqs={num_freqs})")
+    from kldm_new.nn import SinEmbedding
+
+    emb = SinEmbedding(n_frequencies=num_freqs).to(device)
+    freqs = emb.freqs
+
+    n_inf = torch.isinf(freqs).sum().item()
+    n_nan = torch.isnan(freqs).sum().item()
+    chk("freqs buffer", freqs, warn_inf=True)
+    if n_inf > 0 or n_nan > 0:
+        print(f"  {FAIL} {n_inf} Inf / {n_nan} NaN in freqs → sin(Inf)=NaN on EVERY forward pass")
+        print(f"  {INFO} Cause: π·2^k overflows float32 at k≥128. Fix: compute freqs in float64 then cast.")
+    else:
+        print(f"  {PASS} all {num_freqs} frequencies are finite")
+
+    # Test with proper training inputs: pos_diff in minimum-image (norm <= sqrt(3)/2)
+    pos_diff = (torch.rand(1000, 3, device=device) - 0.5)  # components in [-0.5, 0.5]
+    out = emb(pos_diff)
+    n_nan_out = torch.isnan(out).sum().item()
+    n_inf_out = torch.isinf(out).sum().item()
+    tag = PASS if n_nan_out == 0 and n_inf_out == 0 else FAIL
+    print(f"  {tag} forward (pos_diff inputs, norm<=0.866): NaN={n_nan_out}  Inf={n_inf_out}")
+    if n_nan_out > 0:
+        print(f"  {INFO} This will NaN every training step regardless of batch content.")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Test nt(f"  {INFO} sigma_rt_max at t=1.0: {sigma_rt_max:.4f}")
+    print(f"  {INFO} sn entries < 1e-8 in training range: {n_tiny_in_range}")
+    if n_tiny_in_range > 0:
+        print(f"  {FAIL} small sn_values inside training range → target = score_wn / sqrt(~0)")
+    else:
+        print(f"  {PASS} all sn_values inside training range are >= 1e-8")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Test 1b – SinEmbedding frequency overflow (the actual root cause of NaN)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_sin_embedding_overflow(device: torch.device, num_freqs: int = 128) -> None:
+    """Check SinEmbedding for Inf frequencies and NaN output.
+
+    Root cause of training NaN: π·2^127 overflows float32 → freqs[-1]=Inf
+    → sin(Inf)=NaN → every edge feature is NaN → both vel and cell outputs NaN.
+    """
+    section(f"TEST 1b: SinEmbedding overflow (num_freqs={num_freqs})")
+    from kldm_new.nn import SinEmbedding
+
+    emb = SinEmbedding(n_frequencies=num_freqs).to(device)
+    freqs = emb.freqs
+
+    n_inf = torch.isinf(freqs).sum().item()
+    n_nan = torch.isnan(freqs).sum().item()
+    chk("freqs buffer", freqs, warn_inf=True)
+    if n_inf > 0 or n_nan > 0:
+        print(f"  {FAIL} {n_inf} Inf / {n_nan} NaN in freqs → sin(Inf)=NaN on EVERY forward pass")
+        print(f"  {INFO} Cause: π·2^k overflows float32 at k≥128. Fix: compute freqs in float64 then cast.")
+    else:
+        print(f"  {PASS} all {num_freqs} frequencies are finite")
+
+    # Test with proper training inputs: pos_diff in minimum-image (norm <= sqrt(3)/2)
+    pos_diff = torch.rand(1000, 3, device=device) - 0.5  # components in [-0.5, 0.5]
+    out = emb(pos_diff)
+    n_nan_out = torch.isnan(out).sum().item()
+    n_inf_out = torch.isinf(out).sum().item()
+    tag = PASS if n_nan_out == 0 and n_inf_out == 0 else FAIL
+    print(f"  {tag} forward (pos_diff inputs, norm<=0.866): NaN={n_nan_out}  Inf={n_inf_out}")
+    if n_nan_out > 0:
+        print(f"  {INFO} This will NaN every training step regardless of batch content.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -611,6 +703,7 @@ def main() -> None:
     warnings.filterwarnings("ignore", category=UserWarning)
 
     test_sigma_norm_table(device)
+    test_sin_embedding_overflow(device, num_freqs=128)  # catches the original NaN root cause
     test_d_log_wrapped_normal(device)
     test_score_model_forward(device)
     test_loss_computation(device)

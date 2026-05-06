@@ -109,6 +109,9 @@ class LitKLDM(LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, loss_dict, batch_size = self._basic_step(batch)
+        if torch.isnan(loss):
+            nan_components = {k: v for k, v in loss_dict.items() if not torch.isfinite(torch.tensor(v))}
+            warnings.warn(f"NaN loss at step {self.global_step}: {nan_components}", stacklevel=2)
         self.log_dict({f"train/{k}": v for k, v in loss_dict.items()}, batch_size=batch_size)
         return loss
 

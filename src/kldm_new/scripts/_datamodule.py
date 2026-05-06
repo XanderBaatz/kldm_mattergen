@@ -10,6 +10,7 @@ from pathlib import Path
 import hydra
 from mattergen.common.data.collate import collate
 from mattergen.common.data.dataset import CrystalDataset
+from mattergen.common.data.transform import Transform
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
@@ -38,6 +39,7 @@ class KLDMNewDataModule(LightningDataModule):
         data_path: str | Path,
         dataset_name: str | None = None,
         auto_prepare: bool = True,
+        transforms: list[Transform] | None = None,
         train_batch_size: int = 256,
         val_batch_size: int = 256,
         test_batch_size: int = 256,
@@ -45,7 +47,7 @@ class KLDMNewDataModule(LightningDataModule):
         pin_memory: bool = True,
     ):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["transforms"])
         # Resolve relative to original cwd (Hydra changes cwd before instantiation)
         p = Path(data_path)
         if not p.is_absolute():
@@ -57,6 +59,7 @@ class KLDMNewDataModule(LightningDataModule):
         self.data_path = p.resolve()
         self.dataset_name = dataset_name or infer_dataset_name_from_processed_path(self.data_path)
         self.auto_prepare = auto_prepare
+        self.transforms = transforms
 
     # ------------------------------------------------------------------
 
@@ -79,12 +82,12 @@ class KLDMNewDataModule(LightningDataModule):
             )
 
         if stage in (None, "fit"):
-            self.train_dataset = CrystalDataset.from_cache_path(str(data_path / "train"))
-            self.val_dataset = CrystalDataset.from_cache_path(str(data_path / "val"))
+            self.train_dataset = CrystalDataset.from_cache_path(str(data_path / "train"), transforms=self.transforms)
+            self.val_dataset = CrystalDataset.from_cache_path(str(data_path / "val"), transforms=self.transforms)
         if stage in (None, "test"):
-            self.test_dataset = CrystalDataset.from_cache_path(str(data_path / "test"))
+            self.test_dataset = CrystalDataset.from_cache_path(str(data_path / "test"), transforms=self.transforms)
         if stage == "predict":
-            self.predict_dataset = CrystalDataset.from_cache_path(str(data_path / "test"))
+            self.predict_dataset = CrystalDataset.from_cache_path(str(data_path / "test"), transforms=self.transforms)
 
     # ------------------------------------------------------------------
 

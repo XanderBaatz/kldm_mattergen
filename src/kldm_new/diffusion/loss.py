@@ -7,6 +7,7 @@ from torch_scatter import scatter_mean
 from kldm_new.diffusion import d_log_p_wrapped_normal, sigma_norm
 from kldm_new.diffusion.corruption import KLDMMultiCorruption  # noqa: TC001
 from kldm_new.diffusion.tdm import KineticLangevinSDE  # noqa: TC001
+from kldm_new.nn.utils import scatter_center
 
 
 class KLDMLoss(nn.Module):
@@ -119,6 +120,14 @@ class KLDMLoss(nn.Module):
         else:
             prefactor = self._prefactor_t(pos_sde.gamma, t_exp)
             target = prefactor * score_wn
+
+        # Center the target per crystal — the network is constrained to output
+        # zero CoG, so the target must also have zero CoG.  Failure to do this
+        # creates an impossible optimization objective.  This correction is
+        # noted in kldm_jonas: "it is indeed a mistake in the original KLDM
+        # paper appendix" (centering should apply to the target, not f_t).
+        if batch_idx is not None:
+            target = scatter_center(target, index=batch_idx)
 
         return target
 

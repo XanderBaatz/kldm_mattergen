@@ -54,7 +54,11 @@ class KineticLangevinSDE(SDE):
     @property
     def T(self) -> float:  # noqa: N802
         """The end time of the diffusion process."""
-        return self.tf
+        return 1.0
+
+    def _t_internal(self, t: Tensor) -> Tensor:
+        """Map external scheduler time t ∈ [0, 1] → internal time τ ∈ [0, tf]."""
+        return t * self.tf
 
     @staticmethod
     def wrap_pos(
@@ -93,8 +97,8 @@ class KineticLangevinSDE(SDE):
 
         Returns drift and diffusion for velocity.
         """  # noqa: RUF002
-        drift = -self.gamma * x
-        diffusion = torch.full_like(input=x, fill_value=(2.0 * self.gamma) ** 0.5)
+        drift = -self.gamma * self.tf * x
+        diffusion = torch.full_like(input=x, fill_value=(2.0 * self.gamma * self.tf) ** 0.5)
         return drift, diffusion
 
     def marginal_prob(
@@ -111,6 +115,7 @@ class KineticLangevinSDE(SDE):
         Returns mean and std.
         """  # noqa: RUF002
         v0 = x
+        t = self._t_internal(t)  # τ = t * tf
         t = maybe_expand(x=t, batch=batch_idx, like=v0)  # expand t
 
         mu_v_t = torch.exp(-self.gamma * t) * v0
@@ -133,6 +138,7 @@ class KineticLangevinSDE(SDE):
         Uses the numerically stable tanh form for sigma_r_t to avoid cancellation at small t in float32.
         """
         gamma = self.gamma
+        t = self._t_internal(t)  # τ = t * tf
         t = maybe_expand(x=t, batch=batch_idx, like=v0)  # expand t
 
         # (1 - e^{-γt}) / (γ(1 + e^{-γt})) = tanh(γt/2) / γ

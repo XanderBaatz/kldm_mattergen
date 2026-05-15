@@ -42,6 +42,7 @@ dev = [
     #"mkdocs-material>=9.7.1",
     "nox>=2025.11.12",
     "pre-commit>=4.5.1",
+    "pymupdf>=1.27.2.3",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.14.14",
@@ -50,7 +51,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["tools", "src/kldm_new"]
+packages = ["tools", "src/kldm_new", "src/kldm_plus"]
 
 #[tool.hatch.metadata]
 #allow-direct-references = true

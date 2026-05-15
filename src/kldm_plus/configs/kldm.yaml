@@ -1,0 +1,16 @@
+# Original KLDM representation: 6D lattice (lengths + angles) with plain VPSDE.
+# Overrides the corruption and model from default.yaml.
+# scale_pos = 2π matches kldm_frnct TDM default (positions scaled to [-π, π]).
+defaults:
+  - default
+  - override data_module: mp_20_kldm
+  - override lightning_module/diffusion_module/corruption: cell_6d
+  - override lightning_module/diffusion_module/model: cspv_6d
+  - _self_
+
+# Keep the loss kinetic_sde in sync with the corruption kinetic_sde.
+lightning_module:
+  diffusion_module:
+    loss_fn:
+      kinetic_sde:
+        scale_pos: 6.283185307179586 # 2π

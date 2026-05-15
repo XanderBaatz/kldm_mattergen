@@ -1,0 +1,25 @@
+_target_: kldm_plus.diffusion.diffusion_module.KineticDiffusionModule
+
+# model and corruption are populated by the defaults list in the top-level config.
+model: cspv
+corruption: cell_3x3
+
+loss_fn:
+  _target_: kldm_plus.diffusion.training.loss.KineticLoss
+  # kinetic_sde is instantiated separately here so that the loss has access to
+  # the physical constants (sigma-norm table, scale_pos, etc.).
+  # Keep these parameters in sync with corruption.kinetic_sde.
+  kinetic_sde:
+    _target_: kldm_plus.diffusion.corruption.sde.KineticLangevinSDE
+    scale_pos: 1.0
+    tf: 2.0
+    gamma: 1.0
+    k_wn: 13
+    n_sigmas: 2000
+  # Maximum number of atom-type classes; matches D3PMCorruption dim.
+  vocab_size: 100
+  w_pos: 1.0
+  w_cell: 1.0
+  w_h: 1.0
+  simple_loss: false
+  reduce: mean

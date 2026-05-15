@@ -1,0 +1,19 @@
+# KineticScoreModel + CSPVNet for CSP with 6D lattice.
+# pred_atom=False: atom types are inputs (conditioning), not predicted.
+# Pair with corruption: csp_6d.
+_target_: kldm_plus.diffusion.score_models.base.KineticScoreModel
+
+net:
+  _target_: kldm_plus.nn.net.CSPVNet
+  hidden_dim: 512
+  time_dim: 256
+  num_layers: 6
+  atom_dim: 100 # embedding table size; net adds +1 internally for mask slot
+  num_freqs: 128
+  ln: true
+  smooth: false
+  pred_atom: false # CSP: atom types are given, not predicted
+  pred_vel: true
+  pred_cell: true
+  zero_cog: true
+  lattice_dim: 6 # 6D (lengths a,b,c + angles α,β,γ)

@@ -1,0 +1,32 @@
+# Full de-novo generation with mattergen-style 3×3 lattice.
+# Lattice SDE: LatticeVPSDE (mean ~ identity matrix, variance ~ crystal density).
+_target_: kldm_plus.diffusion.corruption.kinetic_multi_corruption.KineticMultiCorruption
+
+kinetic_sde:
+  _target_: kldm_plus.diffusion.corruption.sde.KineticLangevinSDE
+  scale_pos: 1.0
+  tf: 2.0
+  gamma: 1.0
+  k_wn: 13
+  n_sigmas: 2000
+
+sdes:
+  cell:
+    _target_: mattergen.common.diffusion.corruption.LatticeVPSDE.from_vpsde_config
+    vpsde_config:
+      beta_min: 0.1
+      beta_max: 20
+      limit_density: ${data_module.average_density}
+      limit_var_scaling_constant: 0.25
+
+discrete_corruptions:
+  atomic_numbers:
+    _target_: mattergen.diffusion.corruption.d3pm_corruption.D3PMCorruption
+    offset: 1
+    d3pm:
+      _target_: mattergen.diffusion.d3pm.d3pm.MaskDiffusion
+      dim: 100
+      schedule:
+        _target_: mattergen.diffusion.d3pm.d3pm.create_discrete_diffusion_schedule
+        kind: standard
+        num_steps: 1000

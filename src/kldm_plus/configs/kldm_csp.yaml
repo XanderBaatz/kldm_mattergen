@@ -1,0 +1,19 @@
+# CSP (Crystal Structure Prediction) with KLDM 6D lattice.
+# Atom types are fixed inputs — only positions and lattice are diffused.
+#
+# Usage:
+#   uv run python -m kldm_plus.train --config-name=kldm_csp
+defaults:
+  - default
+  - override data_module: mp_20_kldm
+  - override lightning_module/diffusion_module/corruption: csp_6d
+  - override lightning_module/diffusion_module/model: cspv_6d_csp
+  - _self_
+
+lightning_module:
+  diffusion_module:
+    loss_fn:
+      kinetic_sde:
+        scale_pos: 6.283185307179586 # 2π — keep in sync with csp_6d corruption
+      include_atomic_numbers: false # CSP: no masking loss on atom types
+      vocab_size: 100 # still required by the constructor signature

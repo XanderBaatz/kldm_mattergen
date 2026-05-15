@@ -1,0 +1,19 @@
+# CSP variant of cell_6d: atom types are fixed inputs, not diffused.
+# Only pos (kinetic SDE) and cell (plain VPSDE) are corrupted.
+_target_: kldm_plus.diffusion.corruption.kinetic_multi_corruption.KineticMultiCorruption
+
+kinetic_sde:
+  _target_: kldm_plus.diffusion.corruption.sde.KineticLangevinSDE
+  scale_pos: 6.283185307179586 # 2π — matches kldm_frnct TDM default
+  tf: 2.0
+  gamma: 1.0
+  k_wn: 13
+  n_sigmas: 2000
+
+sdes:
+  cell:
+    _target_: mattergen.diffusion.corruption.sde_lib.VPSDE
+    beta_min: 0.1
+    beta_max: 20
+
+# No discrete_corruptions: atom types are conditioned on, not diffused.

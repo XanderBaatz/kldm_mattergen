@@ -1,0 +1,5 @@
+_target_: kldm_plus.data.debug_datamodule.DebugDataModule
+size: 16 # total samples per split
+n_atoms: 6 # atoms per crystal
+cell_dim: 6 # 6D lattice (lengths + angles) — matches cell_6d corruption
+batch_size: 4

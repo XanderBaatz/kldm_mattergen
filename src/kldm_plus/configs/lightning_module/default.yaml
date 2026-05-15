@@ -1,0 +1,20 @@
+# lightning_module.py is a thin wrapper; re-use mattergen's DiffusionLightningModule.
+_target_: kldm_plus.diffusion.lightning_module.KLDMLightningModule
+
+optimizer_partial:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 1e-4
+
+scheduler_partials:
+  - scheduler:
+      _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+      _partial_: true
+      factor: 0.6
+      patience: 100
+      min_lr: 1.0e-6
+      verbose: true
+    interval: epoch
+    frequency: 1
+    monitor: loss_train
+    strict: true

@@ -1,0 +1,20 @@
+# Crystal structure prediction: atom types are fixed (known), only pos + cell are diffused.
+# No discrete_corruptions block — atomic_numbers pass through unchanged.
+_target_: kldm_plus.diffusion.corruption.kinetic_multi_corruption.KineticMultiCorruption
+
+kinetic_sde:
+  _target_: kldm_plus.diffusion.corruption.sde.KineticLangevinSDE
+  scale_pos: 1.0
+  tf: 2.0
+  gamma: 1.0
+  k_wn: 13
+  n_sigmas: 2000
+
+sdes:
+  cell:
+    _target_: mattergen.common.diffusion.corruption.LatticeVPSDE.from_vpsde_config
+    vpsde_config:
+      beta_min: 0.1
+      beta_max: 20
+      limit_density: ${data_module.average_density}
+      limit_var_scaling_constant: 0.25

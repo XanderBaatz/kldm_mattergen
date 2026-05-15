@@ -1,0 +1,15 @@
+hydra:
+  run:
+    dir: ${oc.env:OUTPUT_DIR,outputs/singlerun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+
+auto_resume: true
+
+# Crystal structure prediction (CSP): atom types are known, only pos+cell are diffused.
+defaults:
+  - data_module: mp_20
+  - trainer: default
+  - lightning_module: default
+  - lightning_module/diffusion_module: default
+  - lightning_module/diffusion_module/corruption: csp
+  - lightning_module/diffusion_module/model: cspv
+  - _self_

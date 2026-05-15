@@ -1,0 +1,21 @@
+# Debug config for kldm_csp: 2 train + 2 val steps on CPU, tiny model.
+#
+# Usage:
+#   uv run python -m kldm_plus.train --config-name=kldm_csp_debug
+defaults:
+  - kldm_csp
+  - override data_module: debug_kldm
+  - override trainer: debug
+  - _self_
+
+lightning_module:
+  diffusion_module:
+    loss_fn:
+      kinetic_sde:
+        scale_pos: 6.283185307179586
+    model:
+      net:
+        hidden_dim: 16
+        time_dim: 16
+        num_layers: 1
+        num_freqs: 4

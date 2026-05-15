@@ -1,0 +1,73 @@
+# mp_20 data module configured for the original 6D KLDM lattice representation.
+# Transforms write the 6D lattice vector directly into `cell` (same key used by the
+# 3×3 corruption path), so both representations share the same downstream code.
+#
+# Pipeline:
+#   1. ContinuousIntervalLattice reads the 3×3 cell matrix → writes lengths (3,) + angles (3,).
+#   2. ConcatFeatures joins them into a 6D vector and writes it back to `cell`.
+#   3. UnsqueezeLattice shapes cell (6,) → (1, 6) for PyG batching.
+#
+# angles_loc_scale [0.0, 0.35] matches kldm_frnct default (angles_loc_scale in train_csp_mp_20.yaml).
+# cache_file: set to a precomputed JSON path to enable per-atom-count length normalisation
+#   (equivalent to kldm_frnct's train_loc_scale.json).  Leave null to use plain log-transform.
+
+_target_: mattergen.common.data.datamodule.CrystDataModule
+_recursive_: true
+properties: []
+
+transforms:
+  - _target_: mattergen.common.data.transform.symmetrize_lattice
+    _partial_: true
+  - _target_: mattergen.common.data.transform.set_chemical_system_string
+    _partial_: true
+  - _target_: kldm_plus.data.transform.ContinuousIntervalLattice
+    lengths_out_key: lengths
+    angles_out_key: angles
+    angles_loc_scale: [0.0, 0.35]
+    cache_file: null # set to e.g. data/mp_20/train_loc_scale.json to normalise by n_atoms
+  - _target_: kldm_plus.data.transform.ConcatFeatures
+    in_keys: [lengths, angles]
+    out_key: cell # overwrite the now-consumed 3×3 matrix with the 6D vector
+  - _target_: kldm_plus.data.transform.UnsqueezeLattice
+    key: cell
+
+dataset_transforms:
+  - _target_: mattergen.common.data.dataset_transform.filter_sparse_properties
+    _partial_: true
+
+average_density: 0.05771451654022283 # atoms/Å³ — same as mp_20
+
+root_dir: ${oc.env:PROJECT_ROOT,${hydra:runtime.cwd}}/../datasets/cache/mp_20
+
+train_dataset:
+  _target_: mattergen.common.data.dataset.CrystalDataset.from_cache_path
+  cache_path: ${data_module.root_dir}/train
+  properties: ${data_module.properties}
+  transforms: ${data_module.transforms}
+  dataset_transforms: ${data_module.dataset_transforms}
+
+val_dataset:
+  _target_: mattergen.common.data.dataset.CrystalDataset.from_cache_path
+  cache_path: ${data_module.root_dir}/val
+  properties: ${data_module.properties}
+  transforms: ${data_module.transforms}
+  dataset_transforms: ${data_module.dataset_transforms}
+
+test_dataset:
+  _target_: mattergen.common.data.dataset.CrystalDataset.from_cache_path
+  cache_path: ${data_module.root_dir}/test
+  properties: ${data_module.properties}
+  transforms: ${data_module.transforms}
+  dataset_transforms: ${data_module.dataset_transforms}
+
+num_workers:
+  train: 0
+  val: 0
+  test: 0
+
+batch_size:
+  train: ${eval:'(512 // ${trainer.accumulate_grad_batches}) // (${trainer.devices} * ${trainer.num_nodes})'}
+  val: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
+  test: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
+
+max_epochs: 900

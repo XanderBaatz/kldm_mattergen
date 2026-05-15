@@ -1,0 +1,17 @@
+hydra:
+  run:
+    dir: ${oc.env:OUTPUT_DIR,outputs/singlerun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+
+auto_resume: true
+
+# Default config: de-novo crystal generation with 3×3 lattice (mattergen-style).
+# Override the last two entries to switch to the original 6D KLDM representation:
+#   python train.py --config-name=kldm
+defaults:
+  - data_module: mp_20
+  - trainer: default
+  - lightning_module: default
+  - lightning_module/diffusion_module: default
+  - lightning_module/diffusion_module/corruption: cell_3x3
+  - lightning_module/diffusion_module/model: cspv
+  - _self_

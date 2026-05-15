@@ -1,0 +1,38 @@
+_target_: pytorch_lightning.Trainer
+accelerator: "gpu"
+devices: 1
+num_nodes: 1
+precision: 32
+max_epochs: ${data_module.max_epochs}
+accumulate_grad_batches: 1
+gradient_clip_val: 0.5
+gradient_clip_algorithm: value
+check_val_every_n_epoch: 5
+strategy:
+  _target_: pytorch_lightning.strategies.ddp.DDPStrategy
+  find_unused_parameters: true
+
+logger:
+  _target_: pytorch_lightning.loggers.WandBLogger
+  project: kldm
+  job_type: train
+  settings:
+    _target_: wandb.Settings
+    start_method: fork
+    _save_requirements: false
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: step
+    log_momentum: false
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/loss
+    mode: min
+    save_top_k: 1
+    save_last: true
+    verbose: false
+    every_n_epochs: 1
+    filename: "{epoch}-{val/loss:.4f}"
+  - _target_: pytorch_lightning.callbacks.TQDMProgressBar
+    refresh_rate: 50
+#  - _target_: matter.common.data.callback.SetPropertyScalers

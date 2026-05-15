@@ -1,0 +1,18 @@
+# KLDMScoreModel + CSPVNet for original KLDM 6D lattice (lattice_dim=6).
+# Pair with corruption: cell_6d.
+_target_: kldm_plus.diffusion.score_models.base.KineticScoreModel
+
+net:
+  _target_: kldm_plus.nn.net.CSPVNet
+  hidden_dim: 128
+  time_dim: 128
+  num_layers: 4
+  atom_dim: 100 # number of atom types; net adds +1 internally for the mask token
+  num_freqs: 10
+  ln: true
+  smooth: false
+  pred_atom: true
+  pred_vel: true
+  pred_cell: true
+  zero_cog: true
+  lattice_dim: 6 # 6D (lengths a,b,c + angles α,β,γ)

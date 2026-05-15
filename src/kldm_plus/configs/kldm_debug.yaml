@@ -1,0 +1,23 @@
+# Debug config: inherits the full kldm config but cuts everything down to run
+# 2 train + 2 val steps on CPU with a tiny model — no WandB, no checkpointing.
+#
+# Usage:
+#   uv run python -m kldm_plus.train --config-name=kldm_debug
+defaults:
+  - kldm # full kldm config as base
+  - override data_module: debug_kldm
+  - override trainer: debug
+  - _self_
+
+# Tiny model so the forward pass is cheap.
+lightning_module:
+  diffusion_module:
+    loss_fn:
+      kinetic_sde:
+        scale_pos: 6.283185307179586 # 2π — keep in sync with cell_6d corruption
+    model:
+      net:
+        hidden_dim: 16
+        time_dim: 16
+        num_layers: 1
+        num_freqs: 4

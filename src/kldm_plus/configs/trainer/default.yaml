@@ -13,7 +13,7 @@ strategy:
   find_unused_parameters: true
 
 logger:
-  _target_: pytorch_lightning.loggers.WandBLogger
+  _target_: pytorch_lightning.loggers.WandbLogger
   project: kldm
   job_type: train
   settings:

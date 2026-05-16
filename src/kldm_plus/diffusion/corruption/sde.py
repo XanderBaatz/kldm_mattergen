@@ -1,3 +1,5 @@
+import math
+
 import torch
 from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
 from mattergen.diffusion.corruption.sde_lib import SDE, VESDE, VPSDE
@@ -38,9 +40,25 @@ class KineticLangevinPhysics:
         gamma: float = 1.0,
         k_wn: int = 13,
         n_sigmas: int = 2_000,
+        loss_pos_scale: float | None = None,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        """Initialise physical parameters and pre-compute the sigma-norm table."""
+        """Initialise physical parameters and pre-compute the sigma-norm table.
+
+        Args:
+            scale_pos: Torus period for the *corruption* (sample_pos / wrap_pos).
+                Positions must live in ``[0, scale_pos)``.
+            tf: Final internal time (total diffusion duration).
+            gamma: Friction coefficient.
+            k_wn: Number of wrapping images for the wrapped-normal approximation.
+            n_sigmas: Resolution of the pre-computed sigma-norm lookup table.
+            loss_pos_scale: Torus period used **only for the loss** (sigma-norm table
+                and ``d_log_p_WN``).  Defaults to ``2π`` — matching kldm_frnct, which
+                stores positions in ``[0, 2π)``.  This keeps ``sigma/T ≤ 0.155`` at
+                ``t=1`` (versus ``0.977`` if ``T=scale_pos=1``), preventing sigma-norm
+                underflow and float32 cancellation in ``d_log_p_WN``.
+
+        """
         super().__init__(**kwargs)
 
         if gamma <= 0.0:
@@ -48,18 +66,21 @@ class KineticLangevinPhysics:
             raise ValueError(msg)
 
         self.scale_pos = scale_pos
+        self.loss_pos_scale = loss_pos_scale if loss_pos_scale is not None else 2.0 * math.pi
         self.tf = tf
         self.gamma = gamma
         self.k_wn = k_wn
         self._n_sigmas = n_sigmas
 
-        # Pre-compute the sigma-norm lookup table (device-portable via .to(t.device)).
-        # Set n_sigmas=0 to skip pre-computation (table will be None; _sigma_norm_t will raise).
+        # Pre-compute the sigma-norm lookup table using *loss_pos_scale* (T=2π by default).
+        # This matches kldm_frnct where positions in [0,2π) give sigma/T_max ≈ 0.155,
+        # keeping the wrapped-normal score numerically well-conditioned throughout training.
+        # Set n_sigmas=0 to skip pre-computation.
         if n_sigmas > 0:
             with torch.no_grad():
                 tau_linspace = torch.linspace(0.0, tf, n_sigmas)
                 sigma_r_vals = self._sigma_r_tau(tau_linspace)
-                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_vals, T=scale_pos, N=k_wn)
+                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_vals, T=self.loss_pos_scale, N=k_wn)
         else:
             self._sigma_norms = None
 

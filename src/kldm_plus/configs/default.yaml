@@ -3,6 +3,7 @@ hydra:
     dir: ${oc.env:OUTPUT_DIR,outputs/singlerun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
 
 auto_resume: true
+seed: 42
 
 # Default config: de-novo crystal generation with 3×3 lattice (mattergen-style).
 # Override the last two entries to switch to the original 6D KLDM representation:

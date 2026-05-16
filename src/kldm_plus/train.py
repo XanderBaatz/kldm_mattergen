@@ -36,7 +36,7 @@ from omegaconf import DictConfig, OmegaConf
 from kldm_plus.settings import Settings
 from tools.logger import Logger, LogType
 
-_settings = Settings()
+settings = Settings()
 logger = Logger(
     __name__,
     log_type=LogType.LOCAL,
@@ -54,7 +54,6 @@ def train(cfg: DictConfig) -> None:
     """Train script."""
     # Use module-level _settings — Hydra changes cwd before calling this
     # function, so instantiating Settings() here would fail to find .env.local.
-    settings = _settings
 
     # Inject paths and secrets from .env.local into os.environ so that
     # Hydra's oc.env resolver and WandB can read them.
@@ -64,13 +63,18 @@ def train(cfg: DictConfig) -> None:
     os.environ.setdefault("WANDB_PROJECT", settings.WANDB_PROJECT)
     os.environ.setdefault("WANDB_MODE", settings.WANDB_MODE)
 
+    import pytorch_lightning as pl
+    pl.seed_everything(cfg.get("seed", 42), workers=True)
+
     logger.info("data_path=%s  config=%s", settings.data_path, settings.KLDM_CONFIG)
     torch.set_float32_matmul_precision("high")
 
     # Merge with mattergen's Config schema so checkpoint_path and other
     # structured fields are present (mirrors mattergen/scripts/run.py).
+    # Remove kldm_plus-only keys not present in mattergen's Config before merging.
+    cfg_for_merge = OmegaConf.masked_copy(cfg, [k for k in cfg if k not in ("seed",)])
     schema = OmegaConf.structured(Config)
-    config = OmegaConf.merge(schema, cfg)
+    config = OmegaConf.merge(schema, cfg_for_merge)
     OmegaConf.set_readonly(
         config,
         True,  # noqa: FBT003

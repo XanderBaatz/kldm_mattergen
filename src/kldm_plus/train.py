@@ -54,8 +54,9 @@ def train(cfg: DictConfig) -> None:
     """Train script."""
     settings = Settings()
 
-    # Inject secrets from .env.local into the OS environment so that
-    # WandB (and other C-level libraries) can read them directly.
+    # Inject paths and secrets from .env.local into os.environ so that
+    # Hydra's oc.env resolver and WandB can read them.
+    os.environ.setdefault("DATA_PATH", str(settings.data_path))
     if settings.WANDB_API_KEY:
         os.environ.setdefault("WANDB_API_KEY", settings.WANDB_API_KEY)
     os.environ.setdefault("WANDB_PROJECT", settings.WANDB_PROJECT)

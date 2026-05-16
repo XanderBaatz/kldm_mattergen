@@ -23,7 +23,7 @@ OUTPUT_DIR    Directory for checkpoints / logs (default: outputs/<timestamp>).
 
 from __future__ import annotations
 
-import logging
+import os
 from pathlib import Path
 
 import hydra
@@ -33,7 +33,14 @@ from mattergen.diffusion.config import Config
 from mattergen.diffusion.run import main
 from omegaconf import DictConfig, OmegaConf
 
-logger = logging.getLogger(__name__)
+from kldm_plus.settings import Settings
+from tools.logger import Logger, LogType
+
+_settings = Settings()
+logger = Logger(
+    __name__,
+    log_type=LogType.LOCAL,
+)
 
 _CONFIGS = Path(__file__).parent / "configs"
 
@@ -45,13 +52,29 @@ _CONFIGS = Path(__file__).parent / "configs"
 )
 def train(cfg: DictConfig) -> None:
     """Train script."""
+    settings = Settings()
+
+    # Inject secrets from .env.local into the OS environment so that
+    # WandB (and other C-level libraries) can read them directly.
+    if settings.WANDB_API_KEY:
+        os.environ.setdefault("WANDB_API_KEY", settings.WANDB_API_KEY)
+    os.environ.setdefault("WANDB_PROJECT", settings.WANDB_PROJECT)
+    os.environ.setdefault("WANDB_MODE", settings.WANDB_MODE)
+
+    logger.info("data_path=%s  config=%s", settings.data_path, settings.KLDM_CONFIG)
     torch.set_float32_matmul_precision("high")
+
     # Merge with mattergen's Config schema so checkpoint_path and other
     # structured fields are present (mirrors mattergen/scripts/run.py).
     schema = OmegaConf.structured(Config)
     config = OmegaConf.merge(schema, cfg)
-    OmegaConf.set_readonly(config, True)
+    OmegaConf.set_readonly(
+        config,
+        True,
+    )
+
     logger.info("\n" + OmegaConf.to_yaml(cfg, resolve=False))  # noqa: G003
+
     main(config)
 
 

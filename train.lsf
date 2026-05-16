@@ -9,8 +9,8 @@ set -euo pipefail
 #BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -R "rusage[mem=8GB]"
 #BSUB -W 24:00
-#BSUB -o %J.out
-#BSUB -e %J.err
+#BSUB -o logs/%J.out
+#BSUB -e logs/%J.err
 
 # ---------------- SETUP ----------------
 
@@ -21,33 +21,23 @@ module load cuda/12.9.1 || true
 
 # ---------------- ENV VARS ----------------
 
+# PROJECT_ROOT must be in the OS environment for Hydra's oc.env resolver.
 export PROJECT_ROOT="$PWD"
-export LOG_PATH="${LOG_PATH:-$HOME/kldm_logs}"
-# DATA_PATH: directory containing mp_20/processed (and other datasets).
-# Override before submitting if your data lives on a shared filesystem.
-# e.g.  DATA_PATH=/work/datasets bsub < train.lsf
-export DATA_PATH="${DATA_PATH:-$HOME/kldm_mattergen/data}"
+export HYDRA_FULL_ERROR=1
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-# Config name: kldm (de-novo) | kldm_csp (CSP)
-KLDM_CONFIG="${KLDM_CONFIG:-kldm}"
-
-# WandB
-if [ -f "$HOME/.wandb_env" ]; then
-    source "$HOME/.wandb_env"
-fi
-export WANDB_PROJECT="${WANDB_PROJECT:-kldm_plus}"
-export WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-v100_runs}"
+# Job-specific WandB fields that only the shell knows.
 export WANDB_NAME="${WANDB_NAME:-kldm_plus_${LSB_JOBID:-local}}"
-export WANDB__SERVICE_WAIT="${WANDB__SERVICE_WAIT:-300}"
-export WANDB_START_METHOD=thread
-export WANDB_MODE="${WANDB_MODE:-online}"
+export WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-${LSB_QUEUE:-gpuv100}_runs}"
+
+# Everything else (DATA_PATH, KLDM_CONFIG, WANDB_API_KEY, WANDB_PROJECT,
+# WANDB_MODE, ...) is loaded from .env.local by the Python Settings class.
 
 # ---------------- DIRECTORIES ----------------
 
-mkdir -p logs "$LOG_PATH"
+mkdir -p logs
 
 # ---------------- DEBUG INFO ----------------
 
@@ -57,18 +47,14 @@ echo "Job ID:  ${LSB_JOBID:-local}"
 echo "Host:    $(hostname)"
 echo "Date:    $(date)"
 echo "Repo:    $(pwd)"
-echo "Config:  $KLDM_CONFIG"
-echo "Log dir: $LOG_PATH"
 echo "====================================="
 nvidia-smi || echo "No GPU visible"
-echo "====================================="
-env | grep WANDB || echo "No WANDB env found"
 echo "====================================="
 
 # ---------------- TRAIN ----------------
 
 uv run python -m kldm_plus.train \
-    --config-name "$KLDM_CONFIG" \
+    --config-name "${KLDM_CONFIG:-kldm}" \
     "$@"
 
 # ---------------- DONE ----------------

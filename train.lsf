@@ -23,6 +23,10 @@ module load cuda/12.9.1 || true
 
 export PROJECT_ROOT="$PWD"
 export LOG_PATH="${LOG_PATH:-$HOME/kldm_logs}"
+# DATA_PATH: directory containing mp_20/processed (and other datasets).
+# Override before submitting if your data lives on a shared filesystem.
+# e.g.  DATA_PATH=/work/datasets bsub < train.lsf
+export DATA_PATH="${DATA_PATH:-$HOME/kldm_mattergen/data}"
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1

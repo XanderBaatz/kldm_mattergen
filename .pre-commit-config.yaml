@@ -38,7 +38,7 @@ repos:
       - id: ruff
         name: Ruff check
         description: "Run 'ruff check' for extremely fast Python linting"
-        args: [--fix, --ignore=TC002]
+        args: [--fix]
 
       - id: ruff-format
         name: Ruff format

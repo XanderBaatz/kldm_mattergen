@@ -1,10 +1,10 @@
 import torch
-from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
-from mattergen.diffusion.corruption.sde_lib import SDE, VESDE, VPSDE
-from mattergen.diffusion.data.batched_data import BatchedData  # noqa: F811, RUF100, TC001, TC002
 from torch import Tensor
 
 from kldm_plus.diffusion.corruption.utils import _scatter_center, sigma_norm
+from mattergen.diffusion.corruption.corruption import B, BatchedData, maybe_expand
+from mattergen.diffusion.corruption.sde_lib import SDE, VESDE, VPSDE
+from mattergen.diffusion.data.batched_data import BatchedData  # noqa: F811, RUF100, TC001, TC002
 
 __all__ = [
     "VESDE",
@@ -67,7 +67,7 @@ class KineticLangevinPhysics:
     # Internal time rescaling
     # ------------------------------------------------------------------
 
-    def _t_internal(self, t: Tensor) -> Tensor:
+    def tau(self, t: Tensor) -> Tensor:
         """Map external scheduler time t ∈ [0, 1] → internal time τ ∈ [0, tf]."""
         return t * self.tf
 
@@ -90,10 +90,12 @@ class KineticLangevinPhysics:
         if self._sigma_norms is None:
             msg = "sigma_norms table is disabled (n_sigmas=0); cannot call _sigma_norm_t"
             raise RuntimeError(msg)
-        tau = self._t_internal(t)
+        tau = self.tau(t)
         n = len(self._sigma_norms)
+
         idx = torch.round(tau / self.tf * n).long() - 1
         idx = idx.clamp(0, n - 1)
+
         return self._sigma_norms.to(t.device)[idx]
 
     # ------------------------------------------------------------------
@@ -128,7 +130,7 @@ class KineticLangevinPhysics:
         Uses the numerically stable tanh form to avoid cancellation at small t.
         """
         gamma = self.gamma
-        t = self._t_internal(t)
+        t = self.tau(t)
         t = maybe_expand(x=t, batch=batch_idx, like=v0)
 
         mu_r_t = (torch.tanh(gamma * t / 2.0) / gamma) * (vt + v0)
@@ -157,9 +159,11 @@ class KineticLangevinPhysics:
         """
         mu_r_t, sigma_r_t = self.displacement_marginal(v0=v0, t=t, vt=vt, batch_idx=batch_idx)
         z = torch.randn_like(x0)
+
         if batch_idx is not None:
             z = _scatter_center(x=z, batch_idx=batch_idx)
         r_t = self.wrap_disp(mu_r_t + sigma_r_t * z, self.scale_pos)
+
         return self.wrap_pos(x0 + r_t, period=self.scale_pos)
 
 
@@ -174,7 +178,7 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
     single field.  Coupling with the position field is handled externally by
     ``KineticMultiCorruption``.
 
-    External time t ∈ [0, 1] maps to internal time τ = t * tf via ``_t_internal``.
+    External time t ∈ [0, 1] maps to internal time τ = t * tf via ``tau``.
     SDE coefficients in external time pick up a factor of tf via the chain rule.
     """  # noqa: RUF002
 
@@ -209,7 +213,7 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
     ) -> tuple[Tensor, Tensor]:
         """Marginal mean and std for velocity: v_τ | v_0 ~ N(exp(-γτ) v_0, (1-exp(-2γτ)) I)."""  # noqa: RUF002
         v0 = x
-        t = self._t_internal(t)
+        t = self.tau(t)
         t = maybe_expand(x=t, batch=batch_idx, like=v0)
 
         mu_v_t = torch.exp(-self.gamma * t) * v0
@@ -248,7 +252,7 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
         batch_idx: B = None,  # noqa: ARG002
         batch: BatchedData | None = None,  # noqa: ARG002
     ) -> Tensor:
-        """Log-probability under the velocity prior."""
+        """Log-probability under the velocity prior. Used for calculating score."""
         d = z.shape[-1]
         logp = -0.5 * d * torch.log(torch.tensor(2.0 * torch.pi, device=z.device))
 

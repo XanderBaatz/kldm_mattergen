@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import torch
-from mattergen.diffusion.corruption.corruption import maybe_expand
-from mattergen.diffusion.diffusion_module import BatchTransform, DiffusionModule, T
-from mattergen.diffusion.losses import Loss  # noqa: TC002
-from mattergen.diffusion.model_utils import convert_model_out_to_score
-from mattergen.diffusion.score_models.base import ScoreModel  # noqa: TC002
-from mattergen.diffusion.timestep_samplers import TimestepSampler  # noqa: TC002
 
 from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KineticMultiCorruption
+from mattergen.diffusion.corruption.corruption import maybe_expand
+from mattergen.diffusion.diffusion_module import BatchTransform, DiffusionModule, T
+from mattergen.diffusion.model_utils import convert_model_out_to_score
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.losses import Loss
+    from mattergen.diffusion.score_models.base import ScoreModel
+    from mattergen.diffusion.timestep_samplers import TimestepSampler
 
 
 class KineticDiffusionModule(DiffusionModule):
@@ -66,7 +70,7 @@ class KineticDiffusionModule(DiffusionModule):
 
         3. Passes ``model_out["pos"]`` through unchanged so ``kinetic_sdeevinPosPredictor``
            can access the raw kinetic_sde target during sampling.
-        """
+        """  # noqa: RUF002
         if not isinstance(self.corruption, KineticMultiCorruption):
             msg = f"Expected {KineticMultiCorruption.__name__}"
             raise TypeError(msg)
@@ -75,7 +79,7 @@ class KineticDiffusionModule(DiffusionModule):
         model_out: T = self.model(x, t)
 
         # ---- cell ----------------------------------------------------------------
-        cell_batch_idx = self.corruption._get_batch_indices(x).get("cell")  # noqa: SLF001
+        cell_batch_idx = cast("torch.LongTensor", self.corruption._get_batch_indices(x).get("cell"))  # noqa: SLF001
         cell_score = convert_model_out_to_score(
             model_out=model_out["cell"],
             sde=self.corruption.sdes["cell"],
@@ -86,9 +90,9 @@ class KineticDiffusionModule(DiffusionModule):
         )
 
         # ---- velocity: reconstruct full score from kinetic_sde physics ---------------
-        vel_batch_idx = self.corruption._get_batch_indices(x)["vel"]  # noqa: SLF001
+        vel_batch_idx = cast("torch.LongTensor", self.corruption._get_batch_indices(x)["vel"])  # noqa: SLF001
         vel_t = x["vel"]
-        tau = kinetic_sde._t_internal(t)  # [B] internal time  # noqa: SLF001
+        tau = kinetic_sde.tau(t)  # [B] internal time
         _, sigma_v_t = kinetic_sde.marginal_prob(x=vel_t, t=t, batch_idx=vel_batch_idx)
         prefactor_t = maybe_expand(torch.tanh(kinetic_sde.gamma * tau / 2.0), batch=vel_batch_idx, like=vel_t)
         sigma_norm_t = maybe_expand(torch.sqrt(kinetic_sde._sigma_norm_t(t)), batch=vel_batch_idx, like=vel_t)  # noqa: SLF001

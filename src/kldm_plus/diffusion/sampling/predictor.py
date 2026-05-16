@@ -5,13 +5,13 @@ Two predictors implement the one reverse step of the PC sampler:
 ``KinLangevinEMPredictor`` (registered for ``"vel"``)
     Exponential integrator (EI) for the OU velocity reverse step::
 
-        v_{t-Δt} = exp(Δτ) v_t + 2(exp(Δτ)−1) score_v + √(exp(2Δτ)−1) noise
+        v_{t-Δt} = exp(Δτ) v_t + 2(exp(Δτ)-1) score_v + √(exp(2Δτ)-1) noise
 
     where ``Δτ = γ·tf·|Δt|`` is the *internal* time step.  The score
     ``score_v`` is the reconstructed full velocity score produced by
     ``KineticDiffusionModule.score_fn``::
 
-        score_v = −v_t/σ_v² + model_out["pos"] × prefactor_t × √σ_norm_t
+        score_v = -v_t/σ_v² + model_out["pos"] × prefactor_t × √σ_norm_t
 
 ``KinLangevinPosPredictor`` (registered for ``"pos"``)
     Deterministic position update driven by the current velocity::
@@ -21,22 +21,25 @@ Two predictors implement the one reverse step of the PC sampler:
     Position in the kinetic Langevin SDE has **no noise term**; the
     predictor is therefore fully deterministic (sample == mean) and ignores
     its ``score`` argument.
-"""
+"""  # noqa: RUF002
 
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import torch
-from mattergen.diffusion.corruption.corruption import Corruption  # noqa: TC002
-from mattergen.diffusion.data.batched_data import BatchedData  # noqa: TC002
 from mattergen.diffusion.sampling.predictors import Predictor
-from mattergen.diffusion.sampling.predictors_correctors import SampleAndMean  # noqa: TC002
 from torch import Tensor
 
 from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KinLangevinPosCoupled
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE
 from kldm_plus.diffusion.corruption.utils import _scatter_center
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.corruption.corruption import Corruption
+    from mattergen.diffusion.data.batched_data import BatchedData
+    from mattergen.diffusion.sampling.predictors_correctors import SampleAndMean
 
 
 class KinLangevinEMPredictor(Predictor):
@@ -44,32 +47,33 @@ class KinLangevinEMPredictor(Predictor):
 
     Implements the reverse-time step of the OU velocity process using the
     matrix-exponential (exponential integrator) scheme.  This is numerically
-    more accurate than naive Euler–Maruyama for the OU process because it
+    more accurate than naive Euler-Maruyama for the OU process because it
     exactly integrates the linear drift::
 
-        v_{t-Δt} = exp(γΔτ) v_t + 2(exp(γΔτ)−1) s_v(v_t, x_t, t)
-                   + √(exp(2γΔτ)−1) ξ,  ξ ~ N(0, I)  [zero-CoG per graph]
+        v_{t-Δt} = exp(γΔτ) v_t + 2(exp(γΔτ)-1) s_v(v_t, x_t, t)
+                   + √(exp(2γΔτ)-1) ξ,  ξ ~ N(0, I)  [zero-CoG per graph]
 
     where ``Δτ = tf·|Δt|`` is the internal time step and ``s_v`` is the
     full velocity score (see ``KineticDiffusionModule.score_fn``).
 
     The predictor is registered for ``"vel"`` via a matching
     ``is_compatible`` check against ``KineticLangevinSDE``.
-    """
+    """  # noqa: RUF002
 
     @classmethod
     def is_compatible(cls, corruption: Corruption) -> bool:
+        """Check if predictor is compatible with corruption process."""
         return isinstance(corruption, KineticLangevinSDE)
 
-    def update_given_score(
+    def update_given_score(  # noqa: PLR0913
         self,
         *,
         x: Tensor,
         t: Tensor,  # noqa: ARG002
         dt: Tensor,
-        batch_idx: Tensor,
+        batch_idx: torch.LongTensor,
         score: Tensor,
-        batch: BatchedData,  # noqa: ARG002
+        batch: BatchedData | None,  # noqa: ARG002
     ) -> SampleAndMean:
         """One EI reverse step for velocity.
 
@@ -86,10 +90,12 @@ class KinLangevinEMPredictor(Predictor):
 
         """
         sde = self.corruption
-        assert isinstance(sde, KineticLangevinSDE)
+        if not isinstance(sde, KineticLangevinSDE):
+            msg = f"Expected {KineticLangevinSDE.__name__}, got {type(sde).__name__}"
+            raise TypeError(msg)
 
         # Map external |Δt| → internal Δτ (scalar or near-scalar)
-        dt_tau = sde._t_internal(dt.abs())
+        dt_tau = sde.tau(dt.abs())
         exp_dt = math.exp(dt_tau.item())
         expm1_dt = math.expm1(dt_tau.item())
         std = math.sqrt(max(math.expm1(2.0 * dt_tau.item()), 0.0))
@@ -109,7 +115,7 @@ class KinLangevinPosPredictor(Predictor):
     Position in the kinetic Langevin SDE is driven **only** by velocity; there
     is no Brownian noise term.  The reverse-time step is therefore::
 
-        pos_{t-Δt} = wrap(pos_t − Δτ·v_t,  period=scale_pos)
+        pos_{t-Δt} = wrap(pos_t - Δτ·v_t,  period=scale_pos)
 
     where ``v_t`` is the current noisy velocity (taken from ``batch["vel"]``
     *before* the velocity predictor has updated it — this ordering matches
@@ -124,17 +130,18 @@ class KinLangevinPosPredictor(Predictor):
 
     @classmethod
     def is_compatible(cls, corruption: Corruption) -> bool:
+        """Check if predictor is compatible with corruption process."""
         return isinstance(corruption, KinLangevinPosCoupled)
 
-    def update_given_score(
+    def update_given_score(  # noqa: PLR0913
         self,
         *,
         x: Tensor,
         t: Tensor,  # noqa: ARG002
         dt: Tensor,
-        batch_idx: Tensor,  # noqa: ARG002
+        batch_idx: torch.LongTensor,  # noqa: ARG002
         score: Tensor,  # noqa: ARG002
-        batch: BatchedData,
+        batch: BatchedData | None,
     ) -> SampleAndMean:
         """Deterministic reverse step for position.
 
@@ -151,13 +158,18 @@ class KinLangevinPosPredictor(Predictor):
 
         """
         sde = self.corruption
-        assert isinstance(sde, KinLangevinPosCoupled)
-        kinlang = sde._kinlang
+        if not isinstance(sde, KinLangevinPosCoupled):
+            msg = f"Expected {KinLangevinPosCoupled.__name__}, got {type(sde).__name__}"
+            raise TypeError(msg)
+        kinlang = sde._kinlang  # noqa: SLF001
 
         # Internal time step (scalar)
-        dt_tau = kinlang._t_internal(dt.abs()).item()
+        dt_tau = kinlang.tau(dt.abs()).item()
 
         # pos reverse: x_{t-dt} = wrap(x_t - Δτ·v_t)
+        if batch is None:
+            msg = "batch must be provided for KinLangevinPosPredictor"
+            raise ValueError(msg)
         vel_t = batch["vel"]  # current velocity (BEFORE vel predictor updates it)
         pos_new = kinlang.wrap_pos(x - dt_tau * vel_t, period=kinlang.scale_pos)
 

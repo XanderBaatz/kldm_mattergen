@@ -27,10 +27,12 @@ class KinLangevinPosCoupled(Corruption):
     """
 
     def __init__(self, kinlang: KineticLangevinSDE) -> None:
+        """Initialize kinetic Langevin coupled pos-vel corruption."""
         self._kinlang = kinlang
 
     @property
     def T(self) -> float:  # noqa: N802
+        """Diffusion end time."""
         return 1.0
 
     def marginal_prob(
@@ -40,15 +42,15 @@ class KinLangevinPosCoupled(Corruption):
         batch_idx: B = None,
         batch: BatchedData | None = None,
     ) -> tuple[Tensor, Tensor]:
-        raise NotImplementedError(
-            "pos marginal is a wrapped-normal, not Gaussian — use KineticMultiCorruption.sample_marginal for the coupled sample."
-        )
+        """Marginal probability."""
+        msg = "pos marginal is a wrapped-normal, not Gaussian — use KineticMultiCorruption.sample_marginal for the coupled sample."
+        raise NotImplementedError(msg)
 
     def prior_sampling(
         self,
         shape: tuple,
-        conditioning_data: BatchedData | None = None,
-        batch_idx: B = None,
+        conditioning_data: BatchedData | None = None,  # noqa: ARG002
+        batch_idx: B = None,  # noqa: ARG002
     ) -> Tensor:
         """Uniform random fractional coordinates on ``[0, 1)^3``."""
         return torch.rand(shape)
@@ -59,14 +61,16 @@ class KinLangevinPosCoupled(Corruption):
         batch_idx: B = None,
         batch: BatchedData | None = None,
     ) -> Tensor:
-        raise NotImplementedError("pos prior log-p not implemented for kinetic Langevin")
+        """Prior log(p). Used for calculating score."""
+        msg = "pos prior log-p not implemented for kinetic Langevin"
+        raise NotImplementedError(msg)
 
     def sample_marginal(
         self,
         x: Tensor,
-        t: Tensor,
-        batch_idx: B = None,
-        batch: BatchedData | None = None,
+        t: Tensor,  # noqa: ARG002
+        batch_idx: B = None,  # noqa: ARG002
+        batch: BatchedData | None = None,  # noqa: ARG002
     ) -> Tensor:
         """Identity — the real coupled sampling is done by ``KineticMultiCorruption``."""
         return x
@@ -122,6 +126,7 @@ class KineticMultiCorruption(MultiCorruption):
 
     @property
     def corruptions(self) -> Mapping[str, Corruption]:  # type: ignore[override]
+        """Corruptions dictionary."""
         combined = {**super().corruptions, "pos": self._pos_coupled}
         return {k: combined[k] for k in sorted(combined)}
 

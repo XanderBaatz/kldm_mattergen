@@ -2,7 +2,7 @@
 
 Usage
 -----
-# Default config (de-novo, 3×3 lattice):
+# Default config (de-novo, 3x3 lattice):
     uv run python -m kldm_plus.train
 
 # Original KLDM config (6D lattice, kldm_frnct-equivalent):
@@ -70,7 +70,7 @@ def train(cfg: DictConfig) -> None:
     config = OmegaConf.merge(schema, cfg)
     OmegaConf.set_readonly(
         config,
-        True,
+        True,  # noqa: FBT003
     )
 
     logger.info("\n" + OmegaConf.to_yaml(cfg, resolve=False))  # noqa: G003

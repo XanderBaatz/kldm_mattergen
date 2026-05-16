@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(
             ".env",
-            Path.home() / ".env.local",   # user-level overrides (~/.env.local)
-            ".env.local",                  # repo-level overrides (takes precedence)
+            Path.home() / ".env.local",  # user-level overrides (~/.env.local)
+            ".env.local",  # repo-level overrides (takes precedence)
         ),
         env_file_encoding="utf-8",
         extra="ignore",  # ignore unrecognised env vars (e.g. system variables)
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     """Directory for LSF/HPC log files."""
 
     # ---------- Training ----------
-    KLDM_CONFIG: str = "kldm"
+    KLDM_CONFIG: str = "kldm_csp"
     """Hydra config name (e.g. ``kldm``, ``kldm_csp``, ``kldm_debug``)."""
 
     # ---------- WandB ----------

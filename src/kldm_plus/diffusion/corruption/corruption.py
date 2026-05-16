@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from mattergen.common.diffusion.corruption import LatticeVPSDE  # noqa: TC002
+from typing import TYPE_CHECKING
+
 from mattergen.diffusion.corruption.multi_corruption import Diffusable, MultiCorruption
-from torch import Tensor  # noqa: TC002
 
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
+
+if TYPE_CHECKING:
+    from mattergen.common.diffusion.corruption import LatticeVPSDE
+    from torch import Tensor
 
 
 class KLDMCorruption(MultiCorruption):
@@ -24,7 +28,7 @@ class KLDMCorruption(MultiCorruption):
 
     Note: ``kinlang.T == 1.0 == cell_sde.T``.  The internal kinetic Langevin
     time horizon (``tf=2.0``) is encapsulated inside ``KineticLangevinSDE`` via
-    ``_t_internal``; the external scheduler always operates on ``[0, 1]``.
+    ``tau``; the external scheduler always operates on ``[0, 1]``.
     """
 
     def __init__(

@@ -50,4 +50,4 @@ batch_size:
   val: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
   test: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
 
-max_epochs: 900
+max_epochs: 3000

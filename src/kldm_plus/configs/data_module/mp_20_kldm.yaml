@@ -30,6 +30,9 @@ transforms:
     out_key: cell # overwrite the now-consumed 3×3 matrix with the 6D vector
   - _target_: kldm_plus.data.transform.UnsqueezeLattice
     key: cell
+  - _target_: kldm_plus.data.transform.FullyConnectedGraph
+    key: edge_node_index
+    len_from: pos
 
 dataset_transforms:
   - _target_: mattergen.common.data.dataset_transform.filter_sparse_properties
@@ -73,4 +76,4 @@ batch_size:
   val: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
   test: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
 
-max_epochs: 900
+max_epochs: 3000

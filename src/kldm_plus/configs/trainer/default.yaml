@@ -26,13 +26,13 @@ callbacks:
     logging_interval: step
     log_momentum: false
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
-    monitor: loss_val
+    monitor: val/loss_weighted
     mode: min
     save_top_k: 1
     save_last: true
     verbose: false
     every_n_epochs: 1
-    filename: "{epoch}-{loss_val:.4f}"
+    filename: "{epoch}-{val/loss_weighted:.4f}"
   - _target_: pytorch_lightning.callbacks.RichProgressBar
     refresh_rate: 50
 #  - _target_: matter.common.data.callback.SetPropertyScalers

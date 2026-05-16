@@ -72,8 +72,9 @@ num_workers:
   test: 0
 
 batch_size:
-  train: ${eval:'(512 // ${trainer.accumulate_grad_batches}) // (${trainer.devices} * ${trainer.num_nodes})'}
-  val: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
-  test: ${eval:'(64 // (${trainer.devices} * ${trainer.num_nodes}))'}
+  # kldm_frnct uses 256 for all splits.
+  train: ${eval:'(256 // ${trainer.accumulate_grad_batches}) // (${trainer.devices} * ${trainer.num_nodes})'}
+  val: ${eval:'(256 // (${trainer.devices} * ${trainer.num_nodes}))'}
+  test: ${eval:'(256 // (${trainer.devices} * ${trainer.num_nodes}))'}
 
 max_epochs: 3000

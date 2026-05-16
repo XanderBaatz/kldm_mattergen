@@ -2,9 +2,12 @@
 _target_: kldm_plus.diffusion.lightning_module.KLDMLightningModule
 
 optimizer_partial:
-  _target_: torch.optim.Adam
+  _target_: torch.optim.AdamW
   _partial_: true
-  lr: 1e-4
+  lr: 1e-3
+  weight_decay: 1.0e-12
+  amsgrad: true
+  foreach: true
 
 scheduler_partials:
   - scheduler:
@@ -16,5 +19,5 @@ scheduler_partials:
       verbose: true
     interval: epoch
     frequency: 1
-    monitor: loss_train
+    monitor: train/loss_weighted
     strict: true

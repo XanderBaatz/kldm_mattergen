@@ -58,15 +58,24 @@ def kinetic_pos_loss(
     )
     mu_r = sde.wrap_disp(mu_r, sde.scale_pos)
 
+    # Scale displacement and mean to the loss coordinate system (T = loss_pos_scale,
+    # default 2π).  This matches kldm_frnct where positions live in [0, 2π), keeping
+    # sigma/T ≤ 0.155 at t=1 instead of 0.977.  Both r and mu_r are already in
+    # (-scale_pos/2, scale_pos/2); multiplying by (loss_pos_scale / scale_pos) maps
+    # them to (-loss_pos_scale/2, loss_pos_scale/2) as required by d_log_p_WN(T=loss_pos_scale).
+    pos_rescale = sde.loss_pos_scale / sde.scale_pos
+    r_loss = r * pos_rescale
+    mu_r_loss = mu_r * pos_rescale
+
     target = d_log_p_wrapped_normal(
-        r,
-        mu_r,
+        r_loss,
+        mu_r_loss,
         sigma_r,
         N=sde.k_wn,
-        T=sde.scale_pos,
+        T=sde.loss_pos_scale,
     )
 
-    sigma_norm_t = sde._sigma_norm_t(t)  # [B]
+    sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=loss_pos_scale
     sigma_norm_atom = maybe_expand(x=sigma_norm_t, batch=batch_idx, like=pos_0)
     target = target / sigma_norm_atom.sqrt().clamp(min=1e-6)
 

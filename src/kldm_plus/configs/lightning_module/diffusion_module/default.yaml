@@ -4,6 +4,13 @@ _target_: kldm_plus.diffusion.diffusion_module.KineticDiffusionModule
 model: cspv
 corruption: cell_3x3
 
+# Sample t ~ Uniform(min_t, 1).  kldm_frnct uses 1e-3; 1e-5 (mattergen default)
+# causes sigma_norm → 0 near t=0 which produces huge gradient spikes.
+timestep_sampler:
+  _target_: mattergen.diffusion.timestep_samplers.UniformTimestepSampler
+  min_t: 1.0e-3
+  max_t: 1.0
+
 loss_fn:
   _target_: kldm_plus.diffusion.training.loss.KineticLoss
   # kinetic_sde is instantiated separately here so that the loss has access to

@@ -52,7 +52,9 @@ _CONFIGS = Path(__file__).parent / "configs"
 )
 def train(cfg: DictConfig) -> None:
     """Train script."""
-    settings = Settings()
+    # Use module-level _settings — Hydra changes cwd before calling this
+    # function, so instantiating Settings() here would fail to find .env.local.
+    settings = _settings
 
     # Inject paths and secrets from .env.local into os.environ so that
     # Hydra's oc.env resolver and WandB can read them.

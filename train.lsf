@@ -54,7 +54,7 @@ echo "====================================="
 # ---------------- TRAIN ----------------
 
 uv run python -m kldm_plus.train \
-    --config-name "${KLDM_CONFIG:-kldm}" \
+    --config-name "${KLDM_CONFIG:-kldm_csp}" \
     "$@"
 
 # ---------------- DONE ----------------

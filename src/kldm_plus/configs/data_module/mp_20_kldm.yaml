@@ -37,7 +37,7 @@ dataset_transforms:
 
 average_density: 0.05771451654022283 # atoms/Å³ — same as mp_20
 
-root_dir: ${oc.env:PROJECT_ROOT,${hydra:runtime.cwd}}/../datasets/cache/mp_20
+root_dir: ${oc.env:PROJECT_ROOT,${hydra:runtime.cwd}}/data/mp_20/processed
 
 train_dataset:
   _target_: mattergen.common.data.dataset.CrystalDataset.from_cache_path

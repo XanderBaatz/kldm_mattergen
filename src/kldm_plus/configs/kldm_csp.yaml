@@ -11,6 +11,13 @@ defaults:
   - _self_
 
 lightning_module:
+  val_metrics:
+    _target_: kldm_plus.metrics.csp.CSPMetrics
+    stol: 0.5
+    angle_tol: 10.0
+    ltol: 0.3
+    angles_loc: 0.0
+    angles_scale: 0.35
   diffusion_module:
     loss_fn:
       kinetic_sde:

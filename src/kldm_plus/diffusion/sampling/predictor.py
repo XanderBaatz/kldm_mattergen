@@ -29,12 +29,12 @@ import math
 from typing import TYPE_CHECKING
 
 import torch
+from mattergen.diffusion.sampling.predictors import Predictor
 from torch import Tensor
 
 from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KinLangevinPosCoupled
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE
 from kldm_plus.diffusion.corruption.utils import _scatter_center
-from mattergen.diffusion.sampling.predictors import Predictor
 
 if TYPE_CHECKING:
     from mattergen.diffusion.corruption.corruption import Corruption

@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 import torch
-
-from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KineticMultiCorruption
 from mattergen.diffusion.corruption.corruption import maybe_expand
 from mattergen.diffusion.diffusion_module import BatchTransform, DiffusionModule, T
 from mattergen.diffusion.model_utils import convert_model_out_to_score
+
+from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KineticMultiCorruption
 
 if TYPE_CHECKING:
     from mattergen.diffusion.losses import Loss

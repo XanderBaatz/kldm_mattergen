@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
 from mattergen.diffusion.corruption.multi_corruption import Diffusable, MultiCorruption
 
-if TYPE_CHECKING:
-    from torch import Tensor
+from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
 
+if TYPE_CHECKING:
     from mattergen.common.diffusion.corruption import LatticeVPSDE
+    from torch import Tensor
 
 
 class KLDMCorruption(MultiCorruption):

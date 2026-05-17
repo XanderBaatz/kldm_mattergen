@@ -30,3 +30,5 @@ loss_fn:
   w_h: 1.0
   simple_loss: false
   reduce: mean
+  # Original kldm_frnct lattice objective is x0 MSE. Other options: eps, score_times_std.
+  cell_model_target: x0

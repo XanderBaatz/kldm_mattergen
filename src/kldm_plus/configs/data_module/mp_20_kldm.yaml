@@ -24,7 +24,7 @@ transforms:
     lengths_out_key: lengths
     angles_out_key: angles
     angles_loc_scale: [0.0, 0.35]
-    cache_file: null # set to e.g. data/mp_20/train_loc_scale.json to normalise by n_atoms
+    cache_file: ${oc.env:DATA_PATH,${oc.env:PROJECT_ROOT,${hydra:runtime.cwd}}/data}/mp_20/processed/train_loc_scale.json
   - _target_: kldm_plus.data.transform.ConcatFeatures
     in_keys: [lengths, angles]
     out_key: cell # overwrite the now-consumed 3×3 matrix with the 6D vector

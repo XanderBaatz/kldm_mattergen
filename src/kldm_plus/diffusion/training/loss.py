@@ -9,15 +9,16 @@ from mattergen.diffusion.corruption.corruption import maybe_expand
 from mattergen.diffusion.corruption.multi_corruption import MultiCorruption, apply
 from mattergen.diffusion.data.batched_data import BatchedData  # noqa: TC002
 from mattergen.diffusion.losses import SummedFieldLoss
-from mattergen.diffusion.model_target import ModelTarget, ModelTargets
+from mattergen.diffusion.model_target import ModelTargets
 from mattergen.diffusion.training.field_loss import (
     aggregate_per_sample,
-    denoising_score_matching,
+    compute_noise_given_sample_and_corruption,
 )
 from torch import Tensor
 
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
 from kldm_plus.diffusion.corruption.utils import d_log_p_wrapped_normal
+from kldm_plus.diffusion.training.model_target import ModelTarget
 
 # ---------------------------------------------------------------------------
 # Kinetic Langevin position loss helper
@@ -126,6 +127,56 @@ def masking_cross_entropy_loss(
     else:
         losses = -(dgamma_times_alpha.unsqueeze(-1) * masked_neg_ce).squeeze(-1)
 
+    return aggregate_per_sample(
+        losses,
+        batch_idx=batch_idx,
+        reduce=reduce,
+        batch_size=batch_size,
+    )
+
+
+def cell_continuous_loss(
+    *,
+    corruption,
+    score_model_output: Tensor,
+    t: Tensor,
+    batch_idx: Tensor,
+    batch_size: int,
+    x: Tensor,
+    noisy_x: Tensor,
+    batch: BatchedData,
+    reduce: Literal["sum", "mean"] = "mean",
+    model_target: ModelTarget | str = ModelTarget.x0,
+    **_,
+) -> Tensor:
+    """Per-sample MSE for continuous lattice field with configurable target.
+
+    Targets:
+    - ``x0``: clean value (matches original kldm_frnct lattice objective)
+    - ``eps``: raw corruption noise ε
+    - ``score_times_std``: -ε (MatterGen default)
+    """
+    target_kind = ModelTarget.from_any(model_target)
+    if target_kind == ModelTarget.x0:
+        target = x
+    else:
+        raw_noise = compute_noise_given_sample_and_corruption(
+            x=x,
+            x_noisy=noisy_x,
+            corruption=corruption,
+            t=t,
+            batch_idx=batch_idx,
+            batch=batch,
+        )
+        if target_kind == ModelTarget.eps:
+            target = raw_noise
+        elif target_kind == ModelTarget.score_times_std:
+            target = -raw_noise
+        else:
+            msg = f"Unknown model_target {target_kind}"
+            raise ValueError(msg)
+
+    losses = (score_model_output - target).square()
     return aggregate_per_sample(
         losses,
         batch_idx=batch_idx,
@@ -252,17 +303,22 @@ class KineticLoss(SummedFieldLoss):
         simple_loss: bool = False,
         reduce: Literal["sum", "mean"] = "mean",
         include_atomic_numbers: bool = True,
+        cell_model_target: ModelTarget | str = "x0",
     ) -> None:
+        cell_target = ModelTarget.from_any(cell_model_target)
+        # Expose the configured cell target so the diffusion module can apply
+        # the matching model-output-to-score conversion during sampling.
+        self.cell_model_target = cell_target
         model_targets: ModelTargets = {
             "pos": ModelTarget.score_times_std,
-            "cell": ModelTarget.score_times_std,
+            "cell": cell_target,
         }
         loss_fns: dict = {
             "pos": KineticFieldLoss(kinetic_sde, reduce),
             "cell": partial(
-                denoising_score_matching,
+                cell_continuous_loss,
                 reduce=reduce,
-                model_target=ModelTarget.score_times_std,
+                model_target=cell_target,
             ),
         }
         weights: dict = {"pos": w_pos, "cell": w_cell}

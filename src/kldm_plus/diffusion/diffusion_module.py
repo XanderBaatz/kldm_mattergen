@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING, cast
 import torch
 from mattergen.diffusion.corruption.corruption import maybe_expand
 from mattergen.diffusion.diffusion_module import BatchTransform, DiffusionModule, T
-from mattergen.diffusion.model_utils import convert_model_out_to_score
+from mattergen.diffusion.timestep_samplers import UniformTimestepSampler
 
 from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KineticMultiCorruption
+from kldm_plus.diffusion.model_utils import convert_model_out_to_score
+from kldm_plus.diffusion.training.model_target import ModelTarget
 
 if TYPE_CHECKING:
     from mattergen.diffusion.losses import Loss
@@ -39,14 +41,18 @@ class KineticDiffusionModule(DiffusionModule):
         pre_corruption_fn: BatchTransform | None = None,
         timestep_sampler: TimestepSampler | None = None,
     ) -> None:
-        """Initialize the diffusion module."""
-        super().__init__(
-            model=model,
-            corruption=corruption,
-            loss_fn=loss_fn,
-            pre_corruption_fn=pre_corruption_fn,
-            timestep_sampler=timestep_sampler,
+        """Initialize without MatterGen enum coercion for model targets."""
+        torch.nn.Module.__init__(self)
+        self.model = model
+        self.corruption = corruption
+        self.loss_fn = loss_fn
+        self.pre_corruption_fn = pre_corruption_fn or (lambda x: x)
+        self.model_targets = {k: ModelTarget.from_any(v) for k, v in loss_fn.model_targets.items()}
+        self.timestep_sampler = timestep_sampler or UniformTimestepSampler(
+            min_t=1e-5,
+            max_t=corruption.T,
         )
+        self._register_corruption_modules()
 
     def _get_device(self, batch: T) -> torch.device:
         # ``pos`` is always present in both clean and noisy batches; the first
@@ -61,7 +67,7 @@ class KineticDiffusionModule(DiffusionModule):
         (``"vel"``, ``"cell"``), but the KLDM model outputs the kinetic_sde score target
         in the ``"pos"`` slot rather than in ``"vel"``.  This override:
 
-        1. Converts ``"cell"`` via the standard ``convert_model_out_to_score``.
+          1. Converts ``"cell"`` using kldm's model-utils conversion helper.
         2. Reconstructs the velocity score from kinetic Langevin physics::
 
                score_v = -v_t / σ_v² + model_out["pos"] × prefactor_t × √σ_norm_t
@@ -80,12 +86,16 @@ class KineticDiffusionModule(DiffusionModule):
 
         # ---- cell ----------------------------------------------------------------
         cell_batch_idx = cast("torch.LongTensor", self.corruption._get_batch_indices(x).get("cell"))  # noqa: SLF001
+        cell_target = ModelTarget.from_any(
+            getattr(self.loss_fn, "cell_model_target", self.model_targets["cell"])
+        )
         cell_score = convert_model_out_to_score(
-            model_out=model_out["cell"],
+            model_target=cell_target,
             sde=self.corruption.sdes["cell"],
-            model_target=self.model_targets["cell"],
-            t=t,
+            model_out=model_out["cell"],
+            noisy_x=x["cell"],
             batch_idx=cell_batch_idx,
+            t=t,
             batch=x,
         )
 

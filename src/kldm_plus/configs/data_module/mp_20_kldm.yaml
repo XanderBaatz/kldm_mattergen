@@ -16,8 +16,8 @@ _recursive_: true
 properties: []
 
 transforms:
-  - _target_: mattergen.common.data.transform.symmetrize_lattice
-    _partial_: true
+  #  - _target_: mattergen.common.data.transform.symmetrize_lattice
+  #    _partial_: true
   - _target_: mattergen.common.data.transform.set_chemical_system_string
     _partial_: true
   - _target_: kldm_plus.data.transform.ContinuousIntervalLattice

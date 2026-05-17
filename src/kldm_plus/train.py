@@ -64,6 +64,7 @@ def train(cfg: DictConfig) -> None:
     os.environ.setdefault("WANDB_MODE", settings.WANDB_MODE)
 
     import pytorch_lightning as pl
+
     pl.seed_everything(cfg.get("seed", 42), workers=True)
 
     logger.info("data_path=%s  config=%s", settings.data_path, settings.KLDM_CONFIG)
@@ -72,13 +73,9 @@ def train(cfg: DictConfig) -> None:
     # Merge with mattergen's Config schema so checkpoint_path and other
     # structured fields are present (mirrors mattergen/scripts/run.py).
     # Remove kldm_plus-only keys not present in mattergen's Config before merging.
-    cfg_for_merge = OmegaConf.masked_copy(cfg, [k for k in cfg if k not in ("seed",)])
+    cfg_for_merge = OmegaConf.masked_copy(cfg, [k for k in cfg if k != "seed"])
     schema = OmegaConf.structured(Config)
     config = OmegaConf.merge(schema, cfg_for_merge)
-    OmegaConf.set_readonly(
-        config,
-        True,  # noqa: FBT003
-    )
 
     logger.info("\n" + OmegaConf.to_yaml(cfg, resolve=False))  # noqa: G003
 

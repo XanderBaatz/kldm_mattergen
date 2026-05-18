@@ -17,7 +17,7 @@ from mattergen.diffusion.training.field_loss import (
 from torch import Tensor
 
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
-from kldm_plus.diffusion.corruption.utils import d_log_p_wrapped_normal
+from kldm_plus.diffusion.corruption.utils import _scatter_center, d_log_p_wrapped_normal
 from kldm_plus.diffusion.training.model_target import ModelTarget
 
 # ---------------------------------------------------------------------------
@@ -41,11 +41,13 @@ def kinetic_pos_loss(
 
     Under the simplified parameterisation (v_0 = 0) the training target is::
 
-        target = d_log_p_WN(r, mu_r, sigma_r) / sqrt(sigma_norm_t)
+        target = scatter_center(d_log_p_WN(r, mu_r, sigma_r) / sqrt(sigma_norm_t))
 
     where *r* is the wrapped displacement pos_t - pos_0 in the Lie algebra,
     *mu_r* is the expected displacement conditioned on v_t, and
     *sigma_norm_t = E[||score_WN||^2]* is precomputed on the SDE.
+    The ``scatter_center`` projection removes the per-crystal mean, enforcing
+    the zero-CoG constraint on the training target — matching kldm_frnct.
 
     Returns a 1-D loss tensor of shape (batch_size,).
     """
@@ -79,6 +81,12 @@ def kinetic_pos_loss(
     sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=loss_pos_scale
     sigma_norm_atom = maybe_expand(x=sigma_norm_t, batch=batch_idx, like=pos_0)
     target = target / sigma_norm_atom.sqrt().clamp(min=1e-6)
+
+    # Project target onto the zero-CoG manifold: matches kldm_frnct where
+    # scatter_center is applied to target_pos_t before dividing by sigma_norm_t.
+    # The true score lives on this manifold (zero-sum per crystal); removing
+    # the per-crystal mean eliminates spurious drift and reduces target variance.
+    target = _scatter_center(target, batch_idx)
 
     losses = (score_model_output - target).square()
     return aggregate_per_sample(

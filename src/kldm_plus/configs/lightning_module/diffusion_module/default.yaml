@@ -30,5 +30,7 @@ loss_fn:
   w_h: 1.0
   simple_loss: false
   reduce: mean
-  # Original kldm_frnct lattice objective is x0 MSE. Other options: eps, score_times_std.
+  # kldm_frnct uses x0 for the lattice (parameterization: "x0" in ContinuousDiffusion).
+  # score_times_std (= -eps) converges faster in reported MSE; x0 converges to the
+  # same quality given enough training.  Both work correctly during sampling.
   cell_model_target: x0

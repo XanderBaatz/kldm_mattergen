@@ -6,11 +6,14 @@
 defaults:
   - default
   - override data_module: mp_20_kldm
+  - override trainer: kldm_csp
   - override lightning_module/diffusion_module/corruption: csp_6d
   - override lightning_module/diffusion_module/model: cspv_6d_csp
   - _self_
 
 lightning_module:
+  sampling_eval_batches: 4 # run sampling on all 4 val batches
+  sampling_N: 1000
   val_metrics:
     _target_: kldm_plus.metrics.csp.CSPMetrics
     stol: 0.5
@@ -21,6 +24,6 @@ lightning_module:
   diffusion_module:
     loss_fn:
       kinetic_sde:
-        scale_pos: 6.283185307179586 # 2π — keep in sync with csp_6d corruption
+        scale_pos: 1.0 # fractional coordinates [0, 1); loss rescales internally via loss_pos_scale=2π
       include_atomic_numbers: false # CSP: no masking loss on atom types
       vocab_size: 100 # still required by the constructor signature

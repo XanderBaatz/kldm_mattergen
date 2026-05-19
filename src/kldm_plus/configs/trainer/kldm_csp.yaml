@@ -1,0 +1,38 @@
+_target_: pytorch_lightning.Trainer
+accelerator: "gpu"
+devices: 1
+num_nodes: 1
+precision: 32
+max_epochs: ${data_module.max_epochs}
+accumulate_grad_batches: 1
+gradient_clip_val: null
+check_val_every_n_epoch: 100
+# Limit validation to ~1024 samples (4 × batch_size=256) matching kldm_frnct num_val_subset.
+limit_val_batches: 4
+strategy:
+  _target_: pytorch_lightning.strategies.ddp.DDPStrategy
+  find_unused_parameters: true
+
+logger:
+  _target_: pytorch_lightning.loggers.WandbLogger
+  project: kldm
+  job_type: train
+  settings:
+    _target_: wandb.Settings
+    start_method: fork
+    _save_requirements: false
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: step
+    log_momentum: false
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val/match_rate
+    mode: max
+    save_top_k: 3
+    save_last: true
+    verbose: false
+    every_n_epochs: 100
+    filename: "{epoch}-{val/match_rate:.4f}"
+  - _target_: pytorch_lightning.callbacks.RichProgressBar
+    refresh_rate: 50

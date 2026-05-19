@@ -5,7 +5,7 @@ _target_: kldm_plus.diffusion.corruption.kinetic_multi_corruption.KineticMultiCo
 
 kinetic_sde:
   _target_: kldm_plus.diffusion.corruption.sde.KineticLangevinSDE
-  scale_pos: 6.283185307179586 # 2π — matches kldm_frnct TDM default
+  scale_pos: 1.0 # fractional coordinates ∈ [0, 1); loss rescales to 2π via loss_pos_scale
   tf: 2.0
   gamma: 1.0
   k_wn: 13

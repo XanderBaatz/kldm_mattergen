@@ -13,4 +13,4 @@ lightning_module:
   diffusion_module:
     loss_fn:
       kinetic_sde:
-        scale_pos: 6.283185307179586 # 2π
+        scale_pos: 1.0 # fractional coordinates [0, 1); loss rescales internally via loss_pos_scale=2π

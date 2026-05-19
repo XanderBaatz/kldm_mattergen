@@ -10,11 +10,8 @@ accumulate_grad_batches: 1
 gradient_clip_val: 0.5
 gradient_clip_algorithm: value
 check_val_every_n_epoch: 1
-strategy:
-  _target_: pytorch_lightning.strategies.ddp.DDPStrategy
-  find_unused_parameters: true
 enable_checkpointing: false
 logger: false
 callbacks:
-  - _target_: pytorch_lightning.callbacks.RichProgressBar
+  - _target_: pytorch_lightning.callbacks.TQDMProgressBar
     refresh_rate: 1

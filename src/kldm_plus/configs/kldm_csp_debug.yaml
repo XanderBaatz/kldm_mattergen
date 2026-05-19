@@ -9,10 +9,8 @@ defaults:
   - _self_
 
 lightning_module:
+  sampling_N: 10 # fast on CPU; 1000 only for real runs
   diffusion_module:
-    loss_fn:
-      kinetic_sde:
-        scale_pos: 6.283185307179586
     model:
       net:
         hidden_dim: 16

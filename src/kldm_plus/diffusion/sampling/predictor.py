@@ -34,7 +34,7 @@ from torch import Tensor
 
 from kldm_plus.diffusion.corruption.kinetic_multi_corruption import KinLangevinPosCoupled
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE
-from kldm_plus.diffusion.corruption.utils import _scatter_center
+from kldm_plus.nn.utils import scatter_center
 
 if TYPE_CHECKING:
     from mattergen.diffusion.corruption.corruption import Corruption
@@ -101,7 +101,7 @@ class KinLangevinEMPredictor(Predictor):
         std = math.sqrt(max(math.expm1(2.0 * dt_tau.item()), 0.0))
 
         # Zero-CoG noise (velocity lives in the zero-CoG subspace)
-        noise = _scatter_center(torch.randn_like(x), batch_idx)
+        noise = scatter_center(torch.randn_like(x), index=batch_idx)
 
         vel_mean = exp_dt * x + 2.0 * expm1_dt * score
         vel_sample = vel_mean + std * noise

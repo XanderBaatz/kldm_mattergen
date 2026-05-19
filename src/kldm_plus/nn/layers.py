@@ -28,11 +28,15 @@ class CSPVLayer(nn.Module):
             act_fn: Activation module used in MLP blocks. Defaults to SiLU.
             ln: Whether to apply layer normalization to node features.
             lattice_dim: Flattened dimension of the lattice feature passed to each
-                edge.  Use 9 for a 3×3 cell matrix (mattergen default) or 6 for
+                edge.  Use 9 for a 3x3 cell matrix (mattergen default) or 6 for
                 the KLDM 6D lengths-and-angles representation.
 
         """
         super().__init__()
+
+        if lattice_dim not in (6, 9):
+            msg = f"lattice_dim must be 6 (6D KLDM) or 9 (3x3 matrix), got {lattice_dim}"
+            raise ValueError(msg)
 
         if act_fn is None:
             act_fn = nn.SiLU()

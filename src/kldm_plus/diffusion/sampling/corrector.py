@@ -1,10 +1,10 @@
 """Langevin corrector for kinetic Langevin reverse-time sampling.
 
-``KinLangevinLangevinCorrector`` (registered for ``"vel"``)
+``KineticLangevinCorrector`` (registered for ``"vel"``)
     Applies one Langevin MCMC correction step to the velocity field::
 
-        step_size = (snr × ‖noise‖ / ‖score_v‖)² × 2
-        v_new = v_t + step_size × score_v + √(2 × step_size) × ξ
+        step_size = (snr * ‖noise‖ / ‖score_v‖)² * 2
+        v_new = v_t + step_size * score_v + √(2 * step_size) * ξ
 
     This is identical to the mattergen ``LangevinCorrector`` but
     explicitly adapted for ``KineticLangevinSDE`` (which is not a
@@ -18,26 +18,30 @@ TDM.reverse_step_corrector in ``src/kldm_frnct/model/tdm.py``
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
-from mattergen.diffusion.corruption.corruption import Corruption  # noqa: TC002
-from mattergen.diffusion.corruption.sde_lib import ScoreFunction
-from mattergen.diffusion.data.batched_data import BatchedData  # noqa: TC002
 from mattergen.diffusion.sampling.predictors_correctors import SampleAndMean, Sampler
 from torch import Tensor
 from torch_scatter import scatter_add
 
 from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE
-from kldm_plus.diffusion.corruption.utils import _scatter_center
+from kldm_plus.nn.utils import scatter_center
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.corruption.corruption import Corruption
+    from mattergen.diffusion.corruption.sde_lib import ScoreFunction
+    from mattergen.diffusion.data.batched_data import BatchedData
 
 
-class KinLangevinLangevinCorrector(Sampler):
+class KineticLangevinCorrector(Sampler):
     """Langevin MCMC corrector for the **velocity** field.
 
     Applies a single annealed Langevin step using the reconstructed velocity
     score produced by ``KineticDiffusionModule.score_fn``::
 
-        step_size = min((snr × ‖ξ‖_G / ‖s_v‖_G)² × 2,  max_step_size)
-        v_{corrected} = v + step_size × s_v + √(2 × step_size) × ξ
+        step_size = min((snr * ‖ξ‖_G / ‖s_v‖_G)² * 2,  max_step_size)
+        v_{corrected} = v + step_size * s_v + √(2 * step_size) * ξ
 
     where ``‖·‖_G`` denotes the graph-averaged norm and ``ξ`` is a
     zero-CoG Gaussian noise vector.
@@ -68,6 +72,7 @@ class KinLangevinLangevinCorrector(Sampler):
         snr: float = 0.2,
         max_step_size: float = 1.0,
     ) -> None:
+        """Initialize kinetic Langevin corrector."""
         super().__init__(corruption=corruption, score_fn=score_fn)
         self.n_steps = n_steps
         self.snr = snr
@@ -75,14 +80,15 @@ class KinLangevinLangevinCorrector(Sampler):
 
     @classmethod
     def is_compatible(cls, corruption: Corruption) -> bool:
+        """Check if sampler is compatible with SDE."""
         return isinstance(corruption, KineticLangevinSDE)
 
-    def step_given_score(
+    def step_given_score(  # noqa: D417, PLR0913
         self,
         *,
-        x: Tensor,
+        x: Tensor,  # velocity v_t
         score: Tensor,
-        batch_idx: Tensor,
+        batch_idx: torch.LongTensor | None,
         t: Tensor,  # noqa: ARG002
         dt: Tensor,  # noqa: ARG002
         batch: BatchedData | None = None,  # noqa: ARG002
@@ -101,10 +107,10 @@ class KinLangevinLangevinCorrector(Sampler):
 
         """
         # Zero-CoG noise (preserves zero-centre-of-velocity)
-        noise = _scatter_center(torch.randn_like(x), batch_idx)
+        noise = scatter_center(torch.randn_like(x), index=batch_idx)
 
         # Per-atom squared norms → sum per graph
-        B = int(batch_idx.max().item()) + 1
+        B = int(batch_idx.max().item()) + 1  # noqa: N806
         grad_norm_sq = score.square().sum(dim=-1)  # [num_atoms]
         noise_norm_sq = noise.square().sum(dim=-1)  # [num_atoms]
 
@@ -127,11 +133,14 @@ class KinLangevinLangevinCorrector(Sampler):
         x: Tensor,
         t: Tensor,
         dt: Tensor,
-        batch_idx: Tensor,
+        batch_idx: torch.LongTensor | None,
         batch: BatchedData | None = None,
     ) -> SampleAndMean:
         """Run ``n_steps`` Langevin corrections using the internal score function."""
-        assert self.score_fn is not None, "score_fn must be set to use update_fn"
+        if self.score_fn is None:
+            msg = "score_fn must be set to use update_fn"
+            raise RuntimeError(msg)
+
         for _ in range(self.n_steps):
             score = self.score_fn(x=x, t=t, batch_idx=batch_idx)
             x, mean = self.step_given_score(x=x, score=score, batch_idx=batch_idx, t=t, dt=dt, batch=batch)

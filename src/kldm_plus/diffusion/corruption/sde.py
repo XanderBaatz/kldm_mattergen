@@ -6,7 +6,7 @@ from mattergen.diffusion.corruption.sde_lib import SDE, VESDE, VPSDE
 from mattergen.diffusion.data.batched_data import BatchedData  # noqa: F811, RUF100, TC001, TC002
 from torch import Tensor
 
-from kldm_plus.diffusion.corruption.utils import _scatter_center, sigma_norm
+from kldm_plus.diffusion.corruption.utils import scatter_center, sigma_norm
 
 __all__ = [
     "VESDE",
@@ -33,7 +33,7 @@ class KineticLangevinPhysics:
     ``scale_pos``, ``tf``, ``gamma``, ``k_wn``, ``_n_sigmas``, ``_sigma_norms``.
     """  # noqa: RUF002
 
-    def __init__(
+    def __init__(  # noqa: D417, PLR0913
         self,
         scale_pos: float = 1.0,
         tf: float = 2.0,
@@ -43,7 +43,7 @@ class KineticLangevinPhysics:
         loss_pos_scale: float | None = None,
         **kwargs,  # noqa: ANN003
     ) -> None:
-        """Initialise physical parameters and pre-compute the sigma-norm table.
+        """Initialize physical parameters and pre-compute the sigma-norm table.
 
         Args:
             scale_pos: Torus period for the *corruption* (sample_pos / wrap_pos).
@@ -72,15 +72,14 @@ class KineticLangevinPhysics:
         self.k_wn = k_wn
         self._n_sigmas = n_sigmas
 
-        # Pre-compute the sigma-norm lookup table using *loss_pos_scale* (T=2π by default).
-        # This matches kldm_frnct where positions in [0,2π) give sigma/T_max ≈ 0.155,
-        # keeping the wrapped-normal score numerically well-conditioned throughout training.
+        # Pre-compute the sigma-norm lookup table using T=scale_pos (native torus period).
+        # This is consistent with the loss, which evaluates d_log_p_WN with T=scale_pos.
         # Set n_sigmas=0 to skip pre-computation.
         if n_sigmas > 0:
             with torch.no_grad():
                 tau_linspace = torch.linspace(0.0, tf, n_sigmas)
                 sigma_r_vals = self._sigma_r_tau(tau_linspace)
-                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_vals, T=self.loss_pos_scale, N=k_wn)
+                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_vals, T=self.scale_pos, N=k_wn)
         else:
             self._sigma_norms = None
 
@@ -182,7 +181,7 @@ class KineticLangevinPhysics:
         z = torch.randn_like(x0)
 
         if batch_idx is not None:
-            z = _scatter_center(x=z, batch_idx=batch_idx)
+            z = scatter_center(z, index=batch_idx)
         r_t = self.wrap_disp(mu_r_t + sigma_r_t * z, self.scale_pos)
 
         return self.wrap_pos(x0 + r_t, period=self.scale_pos)
@@ -254,7 +253,7 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
         z = torch.randn_like(x)
 
         if batch_idx is not None:
-            z = _scatter_center(x=z, batch_idx=batch_idx)
+            z = scatter_center(z, index=batch_idx)
 
         return mean + std * z
 
@@ -262,10 +261,15 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
         self,
         shape: torch.Size | tuple,
         conditioning_data: BatchedData | None = None,  # noqa: ARG002
-        batch_idx: B = None,  # noqa: ARG002
+        batch_idx: B = None,
     ) -> Tensor:
-        """Sample from the velocity prior p(v_T) = N(0, I)."""
-        return torch.randn(*shape)
+        """Sample from the velocity prior p(v_T) = N(0, I), zero-CoG per crystal."""
+        z = torch.randn(*shape)
+
+        if batch_idx is not None:
+            z = scatter_center(z, index=batch_idx)
+
+        return z
 
     def prior_logp(
         self,

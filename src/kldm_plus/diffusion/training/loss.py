@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from mattergen.diffusion.corruption.corruption import maybe_expand
 from mattergen.diffusion.corruption.multi_corruption import MultiCorruption, apply
-from mattergen.diffusion.data.batched_data import BatchedData  # noqa: TC002
 from mattergen.diffusion.losses import SummedFieldLoss
-from mattergen.diffusion.model_target import ModelTargets
 from mattergen.diffusion.training.field_loss import (
     aggregate_per_sample,
     compute_noise_given_sample_and_corruption,
 )
 from torch import Tensor
 
-from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE  # noqa: TC001
-from kldm_plus.diffusion.corruption.utils import _scatter_center, d_log_p_wrapped_normal
+from kldm_plus.diffusion.corruption.utils import d_log_p_wrapped_normal, scatter_center
 from kldm_plus.diffusion.training.model_target import ModelTarget
+
+if TYPE_CHECKING:
+    from mattergen.diffusion.data.batched_data import BatchedData
+    from mattergen.diffusion.model_target import ModelTargets
+
+    from kldm_plus.diffusion.corruption.sde import KineticLangevinSDE
 
 # ---------------------------------------------------------------------------
 # Kinetic Langevin position loss helper
 # ---------------------------------------------------------------------------
 
 
-def kinetic_pos_loss(
+def kinetic_pos_loss(  # noqa: PLR0913
     *,
     sde: KineticLangevinSDE,
     score_model_output: Tensor,
@@ -61,24 +64,19 @@ def kinetic_pos_loss(
     )
     mu_r = sde.wrap_disp(mu_r, sde.scale_pos)
 
-    # Scale displacement and mean to the loss coordinate system (T = loss_pos_scale,
-    # default 2π).  This matches kldm_frnct where positions live in [0, 2π), keeping
-    # sigma/T ≤ 0.155 at t=1 instead of 0.977.  Both r and mu_r are already in
-    # (-scale_pos/2, scale_pos/2); multiplying by (loss_pos_scale / scale_pos) maps
-    # them to (-loss_pos_scale/2, loss_pos_scale/2) as required by d_log_p_WN(T=loss_pos_scale).
-    pos_rescale = sde.loss_pos_scale / sde.scale_pos
-    r_loss = r * pos_rescale
-    mu_r_loss = mu_r * pos_rescale
-
+    # Evaluate the wrapped-normal score in the native coordinate system (T=scale_pos).
+    # r and mu_r are already in (-scale_pos/2, scale_pos/2), and sigma_r is in the same
+    # units.  Using T=scale_pos avoids the underflow that occurs when r is rescaled to
+    # a larger period but sigma_r is left unscaled.
     target = d_log_p_wrapped_normal(
-        r_loss,
-        mu_r_loss,
+        r,
+        mu_r,
         sigma_r,
         N=sde.k_wn,
-        T=sde.loss_pos_scale,
+        T=sde.scale_pos,
     )
 
-    sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=loss_pos_scale
+    sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=scale_pos
     sigma_norm_atom = maybe_expand(x=sigma_norm_t, batch=batch_idx, like=pos_0)
     target = target / sigma_norm_atom.sqrt().clamp(min=1e-6)
 
@@ -86,7 +84,7 @@ def kinetic_pos_loss(
     # scatter_center is applied to target_pos_t before dividing by sigma_norm_t.
     # The true score lives on this manifold (zero-sum per crystal); removing
     # the per-crystal mean eliminates spurious drift and reduces target variance.
-    target = _scatter_center(target, batch_idx)
+    target = scatter_center(target, index=batch_idx)
 
     losses = (score_model_output - target).square()
     return aggregate_per_sample(
@@ -102,19 +100,19 @@ def kinetic_pos_loss(
 # ---------------------------------------------------------------------------
 
 
-def masking_cross_entropy_loss(
+def masking_cross_entropy_loss(  # noqa: PLR0913
     *,
     score_model_output: Tensor,
     x: Tensor,
     noisy_x: Tensor,
-    t: Tensor,
+    t: Tensor,  # noqa: ARG001
     batch_idx: Tensor,
     batch_size: int,
     vocab_size: int,
     reduce: Literal["sum", "mean"] = "mean",
     simple_loss: bool = False,
     dgamma_times_alpha: Tensor | None = None,
-    **_,
+    **_,  # noqa: ANN003
 ) -> Tensor:
     """Per-sample cross-entropy for masked atom types.
 

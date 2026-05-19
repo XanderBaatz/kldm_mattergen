@@ -9,6 +9,7 @@ import torch
 from mattergen.diffusion.lightning_module import DiffusionLightningModule, OptimizerPartial, SchedulerPartial
 
 from kldm_plus.diffusion.diffusion_module import KineticDiffusionModule
+from kldm_plus.diffusion.sampling import make_sampler
 
 if TYPE_CHECKING:
     from mattergen.diffusion.data.batched_data import BatchedData
@@ -45,6 +46,8 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
         val_metrics: CSPMetrics | None = None,
         ema_decay: float = 0.999,
         ema_start: int = 500,
+        sampling_eval_batches: int = 0,
+        sampling_N: int = 1000,  # noqa: N803
     ) -> None:
         super().__init__(
             diffusion_module=diffusion_module,
@@ -53,6 +56,9 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
         )
         self.val_metrics = val_metrics
         self.ema_start = ema_start
+        self._sampling_eval_batches = sampling_eval_batches
+        self._sampling_N = sampling_N
+        self._val_batches_for_sampling: list[BatchedData] = []
 
         self.ema_model: torch.optim.swa_utils.AveragedModel = torch.optim.swa_utils.AveragedModel(
             diffusion_module.model,
@@ -114,10 +120,40 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
     def on_validation_epoch_start(self) -> None:
         if self.val_metrics is not None:
             self.val_metrics.reset()
+        self._val_batches_for_sampling = []
+
+    def validation_step(self, batch: BatchedData, batch_idx: int) -> torch.Tensor | None:
+        result = super().validation_step(batch, batch_idx)
+        if (
+            self.val_metrics is not None
+            and self._sampling_eval_batches > 0
+            and len(self._val_batches_for_sampling) < self._sampling_eval_batches
+        ):
+            self._val_batches_for_sampling.append(batch)
+        return result
 
     def on_validation_epoch_end(self) -> None:
         if self.val_metrics is None:
             return
+        if self._val_batches_for_sampling and self._sampling_N > 0:
+            sampler = make_sampler(
+                diffusion_module=self.diffusion_module,
+                device=self.device,
+                N=self._sampling_N,
+            )
+            for batch in self._val_batches_for_sampling:
+                # Ensure vel field exists (simplified parameterisation: v₀ = 0).
+                # Also set vel_batch so pc_sampler.get_batch_idx('vel') resolves.
+                try:
+                    if batch["vel"] is None:
+                        raise KeyError  # noqa: TRY301
+                except (KeyError, AttributeError):
+                    batch = batch.replace(
+                        vel=torch.zeros_like(batch["pos"]),
+                        vel_batch=batch.batch,
+                    )
+                pred, _ = sampler.sample(conditioning_data=batch)
+                self.val_metrics.update_from_chemgraphs(pred, batch)
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
             self.log(

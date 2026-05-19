@@ -55,6 +55,10 @@ class CSPVNet(nn.Module):
         """
         super().__init__()
 
+        if lattice_dim not in (6, 9):
+            msg = f"lattice_dim must be 6 (6D KLDM) or 9 (3x3 matrix), got {lattice_dim}"
+            raise ValueError(msg)
+
         self.act_fn = nn.SiLU()
 
         # Node embedding
@@ -142,11 +146,11 @@ class CSPVNet(nn.Module):
         node_features = torch.cat([node_features, t_per_atom], dim=1)
         node_features = self.atom_latent_emb(node_features)
 
-        # Edge metadata - wrap to minimum image on torus [0, 1)
+        # Edge metadata
         pos_diff = pos[edge_node_index[1]] - pos[edge_node_index[0]]  # (E, 3)
-        pos_diff = pos_diff - pos_diff.round()  # minimum image convention, see p. 3 KLDM
+        # pos_diff = pos_diff - pos_diff.round()  # minimum image convention, see p. 3 KLDM  # noqa: ERA001
         edge_graph_index = node_index[edge_node_index[0]]  # (E, )
-        lattice_flat = lattice.reshape(-1, self.lattice_dim)  # (B, lattice_dim)
+        lattice_flat = lattice.reshape(lattice.shape[0], -1)  # (B, lattice_dim) — inferred
 
         # Message passing
         for layer in self.layers:

@@ -50,10 +50,11 @@ class KinLangevinPosCoupled(Corruption):
         self,
         shape: tuple,
         conditioning_data: BatchedData | None = None,  # noqa: ARG002
-        batch_idx: B = None,  # noqa: ARG002
+        batch_idx: B = None,
     ) -> Tensor:
         """Uniform random fractional coordinates on ``[0, 1)^3``."""
-        return torch.rand(shape)
+        device = batch_idx.device if batch_idx is not None else None
+        return torch.rand(shape, device=device)
 
     def prior_logp(
         self,

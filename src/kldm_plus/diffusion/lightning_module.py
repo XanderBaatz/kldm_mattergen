@@ -157,11 +157,14 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                     # Diagnostic: log a quick summary so the .err file shows what's happening
                     self._log_sample_diagnostics(pred)
             except Exception:
-                import logging as _logging
+                from tools.logger import Logger, LogType
 
-                _logging.getLogger(__name__).exception(
-                    "Sampling failed during validation - metrics will be skipped this epoch."
+                logger = Logger(
+                    __name__,
+                    log_type=LogType.LOCAL,
                 )
+
+                logger.exception("Sampling failed during validation - metrics will be skipped this epoch.")
                 return
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
@@ -176,11 +179,11 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
     def _log_sample_diagnostics(self, pred: BatchedData) -> None:
         """Log cell volumes and validity counts from one sampled batch to stderr."""
         import logging
-        import math
 
         import numpy as np
-        from kldm_plus.metrics.csp import _decode_cell_6d
         from pymatgen.core import Lattice
+
+        from kldm_plus.metrics.csp import _decode_cell_6d
 
         log = logging.getLogger(__name__)
         try:
@@ -200,13 +203,15 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                     loc_t, scale_t = lengths_loc_scale[n_atoms]
                     lengths_loc = np.asarray(loc_t)
                     lengths_scale = np.asarray(scale_t)
-                lengths, angles = _decode_cell_6d(
-                    cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale
-                )
+                lengths, angles = _decode_cell_6d(cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale)
                 try:
                     vol = Lattice.from_parameters(
-                        float(lengths[0]), float(lengths[1]), float(lengths[2]),
-                        float(angles[0]), float(angles[1]), float(angles[2]),
+                        float(lengths[0]),
+                        float(lengths[1]),
+                        float(lengths[2]),
+                        float(angles[0]),
+                        float(angles[1]),
+                        float(angles[2]),
                     ).volume
                 except Exception:
                     vol = float("nan")

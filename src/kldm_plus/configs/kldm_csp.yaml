@@ -21,6 +21,7 @@ lightning_module:
     ltol: 0.3
     angles_loc: 0.0
     angles_scale: 0.35
+    cache_file: ${oc.env:DATA_PATH,${oc.env:PROJECT_ROOT,${hydra:runtime.cwd}}/data}/mp_20/processed/train_loc_scale.json
   diffusion_module:
     loss_fn:
       kinetic_sde:

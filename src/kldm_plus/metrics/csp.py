@@ -6,8 +6,10 @@ objects and uses the kldm_plus 6D cell encoding (log-lengths + tan(angle - π/2)
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -43,15 +45,25 @@ def _decode_cell_6d(
     cell_6d: torch.Tensor,
     angles_loc: float = 0.0,
     angles_scale: float = 0.35,
+    lengths_loc: np.ndarray | None = None,
+    lengths_scale: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decode a (6,) tensor in kldm_plus encoding to (lengths_Å, angles_deg).
 
     Encoding layout: [log_len_a, log_len_b, log_len_c, enc_α, enc_β, enc_γ]
-    where enc_angle = (tan(angle_rad − π/2) − loc) / scale.
+    where enc_angle = (tan(angle_rad − π/2) − angles_loc) / angles_scale
+    and log_len = (log(l) − lengths_loc) / lengths_scale when per-atom
+    normalization was applied (i.e. lengths_loc/scale are not None).
     """
     cell = cell_6d.detach().cpu().float()
     log_lengths = cell[:3]
     enc_angles = cell[3:]
+
+    # Undo per-atom-count length normalization if it was applied during preprocessing.
+    if lengths_loc is not None and lengths_scale is not None:
+        loc_t = torch.as_tensor(lengths_loc, dtype=log_lengths.dtype)
+        scale_t = torch.as_tensor(lengths_scale, dtype=log_lengths.dtype)
+        log_lengths = log_lengths * scale_t + loc_t
 
     lengths = torch.exp(log_lengths).numpy()
 
@@ -67,10 +79,19 @@ def chemgraph_to_structures(
     batch: ChemGraph,
     angles_loc: float = 0.0,
     angles_scale: float = 0.35,
+    lengths_loc_scale: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
 ) -> list[Structure | None]:
     """Convert a (batched) ChemGraph with 6D cell encoding to pymatgen Structures.
 
     Returns a list with one entry per crystal; entry is ``None`` if conversion fails.
+
+    Parameters
+    ----------
+    lengths_loc_scale:
+        Dict mapping n_atoms → (loc, scale) arrays for the per-atom-count length
+        normalization applied by ContinuousIntervalLattice.  When provided the
+        encoded log-lengths are un-normalized before exp().  When ``None`` the
+        raw log-lengths are used (i.e. no normalization was applied).
     """
     batch_size = batch.get_batch_size()
     batch_idx = batch.get_batch_idx("pos")  # (N,) crystal index per atom
@@ -83,9 +104,20 @@ def chemgraph_to_structures(
     for i in range(batch_size):
         try:
             mask = batch_idx == i
+            n_atoms = int(mask.sum().item())
             atom_z = atomic_numbers[mask].tolist()
             frac = pos[mask].numpy()
-            lengths, angles = _decode_cell_6d(cell[i], angles_loc, angles_scale)
+
+            lengths_loc: np.ndarray | None = None
+            lengths_scale: np.ndarray | None = None
+            if lengths_loc_scale is not None and n_atoms in lengths_loc_scale:
+                loc_t, scale_t = lengths_loc_scale[n_atoms]
+                lengths_loc = np.asarray(loc_t)
+                lengths_scale = np.asarray(scale_t)
+
+            lengths, angles = _decode_cell_6d(
+                cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale
+            )
             species = [Element.from_Z(z) for z in atom_z]
             s = Structure(
                 lattice=Lattice.from_parameters(
@@ -131,6 +163,12 @@ class CSPMetrics:
     angles_loc, angles_scale:
         Standardisation parameters for the angle encoding — must match the
         ``angles_loc_scale`` used by :class:`kldm_plus.data.transform.ContinuousIntervalLattice`.
+    cache_file:
+        Path to ``train_loc_scale.json`` produced by
+        :func:`kldm_plus.data.prepare.prepare_dataset`.  When provided the
+        per-atom-count length normalization is correctly inverted during
+        structure decoding.  Set to ``null`` / ``None`` only if the dataset
+        was prepared without length normalization.
 
     """
 
@@ -141,10 +179,20 @@ class CSPMetrics:
         ltol: float = 0.3,
         angles_loc: float = 0.0,
         angles_scale: float = 0.35,
+        cache_file: str | Path | None = None,
     ) -> None:
         self.matcher = StructureMatcher(stol=stol, angle_tol=angle_tol, ltol=ltol)
         self.angles_loc = angles_loc
         self.angles_scale = angles_scale
+        self.lengths_loc_scale: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+        if cache_file is not None:
+            p = Path(cache_file)
+            if p.exists():
+                with p.open() as f:
+                    loaded = json.load(f)
+                self.lengths_loc_scale = {
+                    int(k): (torch.tensor(v[0]), torch.tensor(v[1])) for k, v in loaded.items()
+                }
         self.reset()
 
     # ------------------------------------------------------------------
@@ -177,8 +225,9 @@ class CSPMetrics:
         target: ChemGraph,
     ) -> None:
         """Convenience wrapper: convert ChemGraphs then call ``update``."""
-        pred_structs = chemgraph_to_structures(pred, self.angles_loc, self.angles_scale)
-        gt_structs = chemgraph_to_structures(target, self.angles_loc, self.angles_scale)
+        loc_scale = self.lengths_loc_scale or None
+        pred_structs = chemgraph_to_structures(pred, self.angles_loc, self.angles_scale, loc_scale)
+        gt_structs = chemgraph_to_structures(target, self.angles_loc, self.angles_scale, loc_scale)
         self.update(pred_structs, gt_structs)
 
     # ------------------------------------------------------------------

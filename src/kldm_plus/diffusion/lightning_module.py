@@ -157,14 +157,11 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                     # Diagnostic: log a quick summary so the .err file shows what's happening
                     self._log_sample_diagnostics(pred)
             except Exception:
-                from tools.logger import Logger, LogType
+                import logging as _logging
 
-                logger = Logger(
-                    __name__,
-                    log_type=LogType.LOCAL,
+                _logging.getLogger(__name__).exception(
+                    "Sampling failed during validation - metrics will be skipped this epoch."
                 )
-
-                logger.exception("Sampling failed during validation - metrics will be skipped this epoch.")
                 return
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
@@ -182,24 +179,35 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
         import math
 
         import numpy as np
+        from kldm_plus.metrics.csp import _decode_cell_6d
         from pymatgen.core import Lattice
 
         log = logging.getLogger(__name__)
         try:
             cell = pred["cell"].detach().cpu()
+            batch_idx = pred.get_batch_idx("pos")
             b = cell.shape[0]
+
+            angles_loc = self.val_metrics.angles_loc if self.val_metrics else 0.0
+            angles_scale = self.val_metrics.angles_scale if self.val_metrics else 0.35
+            lengths_loc_scale = getattr(self.val_metrics, "lengths_loc_scale", None)
+
             volumes = []
             for i in range(b):
-                c = cell[i]
-                # 6D encoding: [log_a, log_b, log_c, enc_α, enc_β, enc_γ]
-                a, b_len, c_len = c[0].exp().item(), c[1].exp().item(), c[2].exp().item()
-                enc = c[3:].float()
-                angles_loc = self.val_metrics.angles_loc if self.val_metrics else 0.0
-                angles_scale = self.val_metrics.angles_scale if self.val_metrics else 0.35
-                ang_rad = enc.atan() * angles_scale + angles_loc + math.pi / 2
-                al, be, ga = math.degrees(ang_rad[0].item()), math.degrees(ang_rad[1].item()), math.degrees(ang_rad[2].item())
+                n_atoms = int((batch_idx == i).sum().item())
+                lengths_loc = lengths_scale = None
+                if lengths_loc_scale and n_atoms in lengths_loc_scale:
+                    loc_t, scale_t = lengths_loc_scale[n_atoms]
+                    lengths_loc = np.asarray(loc_t)
+                    lengths_scale = np.asarray(scale_t)
+                lengths, angles = _decode_cell_6d(
+                    cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale
+                )
                 try:
-                    vol = Lattice.from_parameters(a, b_len, c_len, al, be, ga).volume
+                    vol = Lattice.from_parameters(
+                        float(lengths[0]), float(lengths[1]), float(lengths[2]),
+                        float(angles[0]), float(angles[1]), float(angles[2]),
+                    ).volume
                 except Exception:
                     vol = float("nan")
                 volumes.append(vol)

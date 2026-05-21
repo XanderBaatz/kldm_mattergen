@@ -124,11 +124,7 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
 
     def validation_step(self, batch: BatchedData, batch_idx: int) -> torch.Tensor | None:
         result = super().validation_step(batch, batch_idx)
-        if (
-            self.val_metrics is not None
-            and self._sampling_eval_batches > 0
-            and len(self._val_batches_for_sampling) < self._sampling_eval_batches
-        ):
+        if self.val_metrics is not None and self._sampling_eval_batches > 0 and len(self._val_batches_for_sampling) < self._sampling_eval_batches:
             self._val_batches_for_sampling.append(batch)
         return result
 
@@ -136,24 +132,38 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
         if self.val_metrics is None:
             return
         if self._val_batches_for_sampling and self._sampling_N > 0:
-            sampler = make_sampler(
-                diffusion_module=self.diffusion_module,
-                device=self.device,
-                N=self._sampling_N,
-            )
-            for batch in self._val_batches_for_sampling:
-                # Ensure vel field exists (simplified parameterisation: v₀ = 0).
-                # Also set vel_batch so pc_sampler.get_batch_idx('vel') resolves.
-                try:
-                    if batch["vel"] is None:
-                        raise KeyError  # noqa: TRY301
-                except (KeyError, AttributeError):
-                    batch = batch.replace(
-                        vel=torch.zeros_like(batch["pos"]),
-                        vel_batch=batch.batch,
-                    )
-                pred, _ = sampler.sample(conditioning_data=batch)
-                self.val_metrics.update_from_chemgraphs(pred, batch)
+            try:
+                sampler = make_sampler(
+                    diffusion_module=self.diffusion_module,
+                    device=self.device,
+                    N=self._sampling_N,
+                )
+                for batch in self._val_batches_for_sampling:
+                    # Ensure vel field exists (simplified parameterisation: v₀ = 0).
+                    # Also set vel_batch so pc_sampler.get_batch_idx('vel') resolves.
+                    try:
+                        if batch["vel"] is None:
+                            raise KeyError  # noqa: TRY301
+                    except (
+                        KeyError,
+                        AttributeError,
+                    ):
+                        batch = batch.replace(
+                            vel=torch.zeros_like(batch["pos"]),
+                            vel_batch=batch.batch,
+                        )
+                    pred, _ = sampler.sample(conditioning_data=batch)
+                    self.val_metrics.update_from_chemgraphs(pred, batch)
+            except Exception:
+                from tools.logger import Logger, LogType
+
+                logger = Logger(
+                    __name__,
+                    log_type=LogType.LOCAL,
+                )
+
+                logger.exception("Sampling failed during validation - metrics will be skipped this epoch.")
+                return
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
             self.log(

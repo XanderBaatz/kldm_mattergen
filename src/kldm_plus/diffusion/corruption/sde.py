@@ -250,7 +250,8 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
     ) -> Tensor:
         """Sample v_t ~ marginal(v_0=x, t) with zero-CoG noise per crystal."""
         mean, std = self.marginal_prob(x, t, batch_idx, batch)
-        z = torch.randn_like(x)
+        device = batch_idx.device if batch_idx is not None else None
+        z = torch.randn_like(x, device=device)
 
         if batch_idx is not None:
             z = scatter_center(z, index=batch_idx)
@@ -264,7 +265,8 @@ class KineticLangevinSDE(KineticLangevinPhysics, SDE):
         batch_idx: B = None,
     ) -> Tensor:
         """Sample from the velocity prior p(v_T) = N(0, I), zero-CoG per crystal."""
-        z = torch.randn(*shape)
+        device = batch_idx.device if batch_idx is not None else None
+        z = torch.randn(*shape, device=device)
 
         if batch_idx is not None:
             z = scatter_center(z, index=batch_idx)

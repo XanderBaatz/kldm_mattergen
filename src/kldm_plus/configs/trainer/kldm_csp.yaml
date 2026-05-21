@@ -6,7 +6,7 @@ precision: 32
 max_epochs: ${data_module.max_epochs}
 accumulate_grad_batches: 1
 gradient_clip_val: null
-check_val_every_n_epoch: 100
+check_val_every_n_epoch: 50
 # Limit validation to ~1024 samples (4 × batch_size=256) matching kldm_frnct num_val_subset.
 limit_val_batches: 4
 strategy:
@@ -32,7 +32,7 @@ callbacks:
     save_top_k: 3
     save_last: true
     verbose: false
-    every_n_epochs: 100
+    every_n_epochs: 50
     filename: "{epoch}-{val/match_rate:.4f}"
   - _target_: pytorch_lightning.callbacks.RichProgressBar
     refresh_rate: 50

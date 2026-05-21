@@ -124,11 +124,7 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
 
     def validation_step(self, batch: BatchedData, batch_idx: int) -> torch.Tensor | None:
         result = super().validation_step(batch, batch_idx)
-        if (
-            self.val_metrics is not None
-            and self._sampling_eval_batches > 0
-            and len(self._val_batches_for_sampling) < self._sampling_eval_batches
-        ):
+        if self.val_metrics is not None and self._sampling_eval_batches > 0 and len(self._val_batches_for_sampling) < self._sampling_eval_batches:
             self._val_batches_for_sampling.append(batch)
         return result
 
@@ -136,24 +132,40 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
         if self.val_metrics is None:
             return
         if self._val_batches_for_sampling and self._sampling_N > 0:
-            sampler = make_sampler(
-                diffusion_module=self.diffusion_module,
-                device=self.device,
-                N=self._sampling_N,
-            )
-            for batch in self._val_batches_for_sampling:
-                # Ensure vel field exists (simplified parameterisation: v₀ = 0).
-                # Also set vel_batch so pc_sampler.get_batch_idx('vel') resolves.
-                try:
-                    if batch["vel"] is None:
-                        raise KeyError  # noqa: TRY301
-                except (KeyError, AttributeError):
-                    batch = batch.replace(
-                        vel=torch.zeros_like(batch["pos"]),
-                        vel_batch=batch.batch,
-                    )
-                pred, _ = sampler.sample(conditioning_data=batch)
-                self.val_metrics.update_from_chemgraphs(pred, batch)
+            try:
+                sampler = make_sampler(
+                    diffusion_module=self.diffusion_module,
+                    device=self.device,
+                    N=self._sampling_N,
+                )
+                for batch in self._val_batches_for_sampling:
+                    # Ensure vel field exists (simplified parameterisation: v₀ = 0).
+                    # Also set vel_batch so pc_sampler.get_batch_idx('vel') resolves.
+                    try:
+                        if batch["vel"] is None:
+                            raise KeyError  # noqa: TRY301
+                    except (
+                        KeyError,
+                        AttributeError,
+                    ):
+                        batch = batch.replace(
+                            vel=torch.zeros_like(batch["pos"]),
+                            vel_batch=batch.batch,
+                        )
+                    pred, _ = sampler.sample(conditioning_data=batch)
+                    self.val_metrics.update_from_chemgraphs(pred, batch)
+                    # Diagnostic: log a quick summary so the .err file shows what's happening
+                    self._log_sample_diagnostics(pred)
+            except Exception:
+                from tools.logger import Logger, LogType
+
+                logger = Logger(
+                    __name__,
+                    log_type=LogType.LOCAL,
+                )
+
+                logger.exception("Sampling failed during validation - metrics will be skipped this epoch.")
+                return
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
             self.log(
@@ -163,3 +175,43 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                 prog_bar=True,
                 sync_dist=True,
             )
+
+    def _log_sample_diagnostics(self, pred: BatchedData) -> None:
+        """Log cell volumes and validity counts from one sampled batch to stderr."""
+        import logging
+        import math
+
+        import numpy as np
+        from pymatgen.core import Lattice
+
+        log = logging.getLogger(__name__)
+        try:
+            cell = pred["cell"].detach().cpu()
+            b = cell.shape[0]
+            volumes = []
+            for i in range(b):
+                c = cell[i]
+                # 6D encoding: [log_a, log_b, log_c, enc_α, enc_β, enc_γ]
+                a, b_len, c_len = c[0].exp().item(), c[1].exp().item(), c[2].exp().item()
+                enc = c[3:].float()
+                angles_loc = self.val_metrics.angles_loc if self.val_metrics else 0.0
+                angles_scale = self.val_metrics.angles_scale if self.val_metrics else 0.35
+                ang_rad = enc.atan() * angles_scale + angles_loc + math.pi / 2
+                al, be, ga = math.degrees(ang_rad[0].item()), math.degrees(ang_rad[1].item()), math.degrees(ang_rad[2].item())
+                try:
+                    vol = Lattice.from_parameters(a, b_len, c_len, al, be, ga).volume
+                except Exception:
+                    vol = float("nan")
+                volumes.append(vol)
+            vols = np.array(volumes)
+            log.info(
+                "epoch %d | sampled cell volumes (Å³): min=%.3f mean=%.3f max=%.3f | n_valid_vol=%d/%d",
+                self.current_epoch,
+                np.nanmin(vols),
+                np.nanmean(vols),
+                np.nanmax(vols),
+                int(np.sum(vols > 0.1)),
+                b,
+            )
+        except Exception:
+            log.debug("_log_sample_diagnostics failed", exc_info=True)

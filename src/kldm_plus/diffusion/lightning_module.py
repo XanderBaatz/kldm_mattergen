@@ -154,6 +154,8 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                         )
                     pred, _ = sampler.sample(conditioning_data=batch)
                     self.val_metrics.update_from_chemgraphs(pred, batch)
+                    # Diagnostic: log a quick summary so the .err file shows what's happening
+                    self._log_sample_diagnostics(pred)
             except Exception:
                 from tools.logger import Logger, LogType
 
@@ -173,3 +175,43 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
                 prog_bar=True,
                 sync_dist=True,
             )
+
+    def _log_sample_diagnostics(self, pred: BatchedData) -> None:
+        """Log cell volumes and validity counts from one sampled batch to stderr."""
+        import logging
+        import math
+
+        import numpy as np
+        from pymatgen.core import Lattice
+
+        log = logging.getLogger(__name__)
+        try:
+            cell = pred["cell"].detach().cpu()
+            b = cell.shape[0]
+            volumes = []
+            for i in range(b):
+                c = cell[i]
+                # 6D encoding: [log_a, log_b, log_c, enc_α, enc_β, enc_γ]
+                a, b_len, c_len = c[0].exp().item(), c[1].exp().item(), c[2].exp().item()
+                enc = c[3:].float()
+                angles_loc = self.val_metrics.angles_loc if self.val_metrics else 0.0
+                angles_scale = self.val_metrics.angles_scale if self.val_metrics else 0.35
+                ang_rad = enc.atan() * angles_scale + angles_loc + math.pi / 2
+                al, be, ga = math.degrees(ang_rad[0].item()), math.degrees(ang_rad[1].item()), math.degrees(ang_rad[2].item())
+                try:
+                    vol = Lattice.from_parameters(a, b_len, c_len, al, be, ga).volume
+                except Exception:
+                    vol = float("nan")
+                volumes.append(vol)
+            vols = np.array(volumes)
+            log.info(
+                "epoch %d | sampled cell volumes (Å³): min=%.3f mean=%.3f max=%.3f | n_valid_vol=%d/%d",
+                self.current_epoch,
+                np.nanmin(vols),
+                np.nanmean(vols),
+                np.nanmax(vols),
+                int(np.sum(vols > 0.1)),
+                b,
+            )
+        except Exception:
+            log.debug("_log_sample_diagnostics failed", exc_info=True)

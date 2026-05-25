@@ -133,6 +133,12 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
             return
         if self._val_batches_for_sampling and self._sampling_N > 0:
             try:
+                # Use EMA model after ema_start — mirrors kldm_frnct which always
+                # switches to ema_model.module once current_epoch > ema_start.
+                _orig_model = None
+                if self.ema_model is not None and self.current_epoch >= self.ema_start:
+                    _orig_model = self.diffusion_module.model
+                    self.diffusion_module.model = self.ema_model.module
                 sampler = make_sampler(
                     diffusion_module=self.diffusion_module,
                     device=self.device,
@@ -166,6 +172,10 @@ class KLDMLightningModule(DiffusionLightningModule[KineticDiffusionModule]):
 
                 logger.exception("Sampling failed during validation - metrics will be skipped this epoch.")
                 return
+            finally:
+                # Always restore the original model, even on exception.
+                if _orig_model is not None:
+                    self.diffusion_module.model = _orig_model
         summary = self.val_metrics.summarize()
         for k, v in summary.items():
             self.log(

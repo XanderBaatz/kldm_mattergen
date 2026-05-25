@@ -92,6 +92,7 @@ def chemgraph_to_structures(
         normalization applied by ContinuousIntervalLattice.  When provided the
         encoded log-lengths are un-normalized before exp().  When ``None`` the
         raw log-lengths are used (i.e. no normalization was applied).
+
     """
     batch_size = batch.get_batch_size()
     batch_idx = batch.get_batch_idx("pos")  # (N,) crystal index per atom
@@ -106,7 +107,7 @@ def chemgraph_to_structures(
             mask = batch_idx == i
             n_atoms = int(mask.sum().item())
             atom_z = atomic_numbers[mask].tolist()
-            frac = pos[mask].numpy()
+            frac = pos[mask].numpy() % 1.0
 
             lengths_loc: np.ndarray | None = None
             lengths_scale: np.ndarray | None = None
@@ -115,9 +116,7 @@ def chemgraph_to_structures(
                 lengths_loc = np.asarray(loc_t)
                 lengths_scale = np.asarray(scale_t)
 
-            lengths, angles = _decode_cell_6d(
-                cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale
-            )
+            lengths, angles = _decode_cell_6d(cell[i], angles_loc, angles_scale, lengths_loc, lengths_scale)
             species = [Element.from_Z(z) for z in atom_z]
             s = Structure(
                 lattice=Lattice.from_parameters(
@@ -190,9 +189,7 @@ class CSPMetrics:
             if p.exists():
                 with p.open() as f:
                     loaded = json.load(f)
-                self.lengths_loc_scale = {
-                    int(k): (torch.tensor(v[0]), torch.tensor(v[1])) for k, v in loaded.items()
-                }
+                self.lengths_loc_scale = {int(k): (torch.tensor(v[0]), torch.tensor(v[1])) for k, v in loaded.items()}
         self.reset()
 
     # ------------------------------------------------------------------
@@ -240,7 +237,7 @@ class CSPMetrics:
         return {
             "valid": sum(self._valid) / n if n else 0.0,
             "match_rate": sum(self._match) / n if n else 0.0,
-            "rmse": sum(self._rmse) / n_rmse if n_rmse else float("nan"),
+            "rmse": sum(self._rmse) / n_rmse if n_rmse else 0.0,
         }
 
     # ------------------------------------------------------------------

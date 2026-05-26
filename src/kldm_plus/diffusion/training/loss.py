@@ -54,7 +54,18 @@ def kinetic_pos_loss(  # noqa: PLR0913
 
     Returns a 1-D loss tensor of shape (batch_size,).
     """
-    r = sde.wrap_disp(pos_t - pos_0, sde.scale_pos)
+    # Rescale positions from [0, scale_pos) to [0, loss_pos_scale) before computing
+    # the training target.  This matches kldm_frnct which stores positions in [0, 2π)
+    # (loss_pos_scale=2π by default) and evaluates d_log_p_WN with T=2π.
+    # With scale_pos=1 and sigma_r_max≈0.98, using T=1 causes sigma_norm underflow
+    # (sigma_r/T≈0.98); rescaling to T=2π keeps sigma_r/T≤0.155 throughout training.
+    lps = sde.loss_pos_scale
+    scale = lps / sde.scale_pos  # e.g. 2π / 1.0 = 2π
+
+    pos_0_scaled = pos_0 * scale
+    pos_t_scaled = pos_t * scale
+
+    r = sde.wrap_disp(pos_t_scaled - pos_0_scaled, lps)
 
     mu_r, sigma_r = sde.displacement_marginal(
         v0=torch.zeros_like(v_t),
@@ -62,21 +73,22 @@ def kinetic_pos_loss(  # noqa: PLR0913
         vt=v_t,
         batch_idx=batch_idx,
     )
-    mu_r = sde.wrap_disp(mu_r, sde.scale_pos)
+    # mu_r and sigma_r are in native scale_pos units; rescale to loss_pos_scale units.
+    # Both the mean and std of the displacement process scale linearly with position scale.
+    mu_r = sde.wrap_disp(mu_r * scale, lps)
+    sigma_r = sigma_r * scale
 
-    # Evaluate the wrapped-normal score in the native coordinate system (T=scale_pos).
-    # r and mu_r are already in (-scale_pos/2, scale_pos/2), and sigma_r is in the same
-    # units.  Using T=scale_pos avoids the underflow that occurs when r is rescaled to
-    # a larger period but sigma_r is left unscaled.
+    # Evaluate the wrapped-normal score with T=loss_pos_scale.
+    # r, mu_r, and sigma_r are all in the same (loss_pos_scale) coordinate system.
     target = d_log_p_wrapped_normal(
         r,
         mu_r,
         sigma_r,
         N=sde.k_wn,
-        T=sde.scale_pos,
+        T=lps,
     )
 
-    sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=scale_pos
+    sigma_norm_t = sde._sigma_norm_t(t)  # [B]  — built with T=loss_pos_scale
     sigma_norm_atom = maybe_expand(x=sigma_norm_t, batch=batch_idx, like=pos_0)
     target = target / sigma_norm_atom.sqrt().clamp(min=1e-6)
 

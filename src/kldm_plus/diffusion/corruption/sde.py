@@ -72,14 +72,19 @@ class KineticLangevinPhysics:
         self.k_wn = k_wn
         self._n_sigmas = n_sigmas
 
-        # Pre-compute the sigma-norm lookup table using T=scale_pos (native torus period).
-        # This is consistent with the loss, which evaluates d_log_p_WN with T=scale_pos.
+        # Pre-compute the sigma-norm lookup table using T=loss_pos_scale (default 2π).
+        # The loss evaluates d_log_p_WN with T=loss_pos_scale after rescaling positions
+        # by loss_pos_scale, so the sigma_norm table must match.
+        # Using T=2π keeps sigma_r/T ≤ 0.155 throughout training (vs ~0.98 for T=1),
+        # preventing sigma-norm underflow and float32 cancellation in d_log_p_WN.
         # Set n_sigmas=0 to skip pre-computation.
         if n_sigmas > 0:
             with torch.no_grad():
                 tau_linspace = torch.linspace(0.0, tf, n_sigmas)
                 sigma_r_vals = self._sigma_r_tau(tau_linspace)
-                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_vals, T=self.scale_pos, N=k_wn)
+                # Scale sigma_r to loss_pos_scale units (same rescaling used in the loss).
+                sigma_r_scaled = sigma_r_vals * (self.loss_pos_scale / self.scale_pos)
+                self._sigma_norms: Tensor | None = sigma_norm(sigma_r_scaled, T=self.loss_pos_scale, N=k_wn)
         else:
             self._sigma_norms = None
 
